@@ -14,14 +14,47 @@
 
 ## 1. 설치
 
+압축을 푼 폴더에서 한 줄이면 됩니다.
+
+```bash
+bash setup.sh          # macOS / Linux
+setup.bat              # Windows (더블클릭해도 됩니다)
+```
+
+가상환경(.venv) 생성 → 라이브러리 설치 → Chromium 내려받기 → `.env` 생성 → 환경 점검까지 알아서 합니다.
+회사망 등에서 Chromium 다운로드가 막혀도 나머지 설치는 끝내고, 무엇을 다시 하면 되는지 알려줍니다.
+
+설치가 끝나면 **`.env` 파일을 열어 `ANTHROPIC_API_KEY` 에 실제 키를 넣어주세요.**
+`.env` 는 `.gitignore` 에 들어 있어서 GitHub 에 올라가지 않습니다.
+
+```
+ANTHROPIC_API_KEY=sk-ant-...
+```
+
+<details><summary>직접 설치하고 싶다면</summary>
+
 ```bash
 python -m venv .venv && source .venv/bin/activate     # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 playwright install chromium
-
-cp .env.example .env      # ANTHROPIC_API_KEY 만 채우면 시작 가능
+cp .env.example .env
 python -m sns_autopilot doctor
 ```
+</details>
+
+<details><summary>인터넷이 막힌 환경이라면</summary>
+
+`vendor/wheels/` 폴더가 함께 들어 있으면 `setup.sh` / `setup.bat` 이 자동으로 그걸 씁니다
+(`pip install --no-index --find-links vendor/wheels`). 이 폴더는 **운영체제와 파이썬 버전이 맞아야** 합니다.
+직접 만들려면 인터넷 되는 같은 사양의 PC에서:
+
+```bash
+pip download -d vendor/wheels -r requirements.txt
+```
+
+Chromium 은 wheel 에 들어 있지 않아 `playwright install chromium` 이 따로 필요합니다.
+이미 크롬이 있다면 `CHROMIUM_PATH` 환경변수로 실행 파일 경로를 지정해도 됩니다.
+</details>
 
 `doctor` 가 Python 버전, ffmpeg, Chromium, 한글 폰트, API 키, 연결된 발행 채널을 한 번에 점검합니다.
 

@@ -85,7 +85,10 @@ async function doctor() {
 
   push(koreanFontFace().includes("@font-face"), "한글 폰트 (Noto Sans KR)", "npm install 로 @fontsource/noto-sans-kr 를 받아주세요.");
 
-  push(Boolean(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN), "ANTHROPIC_API_KEY", ".env 에 API 키를 넣어주세요.");
+  // .env.example 의 자리표시자(sk-ant-...)를 진짜 키로 착각하지 않게 거릅니다.
+  const key = process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN || "";
+  push(Boolean(key) && !key.includes("...") && key.length > 20, "ANTHROPIC_API_KEY",
+    ".env 의 ANTHROPIC_API_KEY 에 실제 키를 넣어주세요 (sk-ant-... 자리표시자 그대로면 안 됩니다).");
 
   for (const [name, adapter] of Object.entries(ADAPTERS)) {
     if (name === "file") continue;

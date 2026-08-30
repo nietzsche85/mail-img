@@ -53,6 +53,12 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _real_key() -> bool:
+    """.env.example 의 자리표시자(sk-ant-...)를 진짜 키로 착각하지 않게 거릅니다."""
+    key = os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN") or ""
+    return bool(key) and "..." not in key and len(key) > 20
+
+
 def doctor() -> int:
     checks: list[tuple[bool, str, str, bool]] = []   # (통과, 라벨, 힌트, 참고용여부)
 
@@ -86,8 +92,9 @@ def doctor() -> int:
     checks.append(("@font-face" in korean_font_face(), "한글 폰트 (Noto Sans KR)",
                    f"{FONT_DIR} 에 woff2 파일이 있어야 합니다.", False))
 
-    checks.append((bool(os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")),
-                   "ANTHROPIC_API_KEY", ".env 에 API 키를 넣어주세요.", False))
+    checks.append((_real_key(), "ANTHROPIC_API_KEY",
+                   ".env 의 ANTHROPIC_API_KEY 에 실제 키를 넣어주세요 (sk-ant-... 자리표시자 그대로면 안 됩니다).",
+                   False))
 
     from .publish.adapters import ADAPTERS
 
