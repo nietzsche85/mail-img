@@ -1,0 +1,33 @@
+{
+  "name": "mail-img-sns-autopilot",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "홈페이지 자동 조작 녹화 → 숏츠/GIF 생성 → 블로그 분석 → 바이럴 문구·이미지 생성 → SNS 자동 발행 파이프라인",
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "autopilot": "src/cli.js"
+  },
+  "scripts": {
+    "setup": "playwright install chromium",
+    "capture": "node src/cli.js capture",
+    "render": "node src/cli.js render",
+    "analyze": "node src/cli.js analyze",
+    "copy": "node src/cli.js copy",
+    "image": "node src/cli.js image",
+    "publish": "node src/cli.js publish",
+    "run": "node src/cli.js run",
+    "doctor": "node src/cli.js doctor"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.122.0",
+    "@fontsource/noto-sans-kr": "^5.1.1",
+    "cheerio": "^1.0.0",
+    "ffmpeg-static": "^5.2.0",
+    "playwright": "^1.49.0",
+    "yaml": "^2.6.1",
+    "zod": "^4.5.4"
+  }
+}
