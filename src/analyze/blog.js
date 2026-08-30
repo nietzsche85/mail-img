@@ -7,7 +7,19 @@ const UA = "Mozilla/5.0 (compatible; SNS-Autopilot/0.1; +https://github.com/)";
 async function get(url) {
   const res = await fetch(url, { headers: { "user-agent": UA, accept: "*/*" }, redirect: "follow" });
   if (!res.ok) throw new Error(`${res.status} ${res.statusText} — ${url}`);
-  return res.text();
+
+  // res.text() 는 무조건 UTF-8 로 읽습니다. 국내 구형 블로그는 EUC-KR 이 많아서
+  // 그대로 두면 한글이 전부 깨진 채로 모델에 들어갑니다.
+  // 헤더 charset → <meta charset> → utf-8 순으로 정합니다.
+  const buffer = Buffer.from(await res.arrayBuffer());
+  const fromHeader = /charset=["']?([\w-]+)/i.exec(res.headers.get("content-type") ?? "")?.[1];
+  const fromMeta = /charset=["']?\s*([\w-]+)/i.exec(buffer.subarray(0, 4096).toString("latin1"))?.[1];
+  const charset = (fromHeader || fromMeta || "utf-8").toLowerCase();
+  try {
+    return new TextDecoder(charset).decode(buffer);
+  } catch {
+    return buffer.toString("utf8");
+  }
 }
 
 /** 사이트 주소만 줘도 흔한 위치에서 RSS/Atom 을 찾아봅니다. */

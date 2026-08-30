@@ -1,0 +1,47 @@
+# ══════════════════════════════════════════════════════════════
+#  홈페이지 자동 조작 시나리오
+#  - 위에서부터 순서대로 실행되고, 전 과정이 영상으로 녹화됩니다.
+#  - caption 을 적으면 그 시점부터 다음 caption 까지 자막으로 깔립니다.
+#  - ${ENV_NAME} 은 .env 값으로 치환됩니다.
+# ══════════════════════════════════════════════════════════════
+
+name: "서울 → 홍콩 항공권 검색"
+url: "https://example.com"
+
+viewport: { width: 540, height: 960, deviceScaleFactor: 2 }
+locale: "ko-KR"
+timezone: "Asia/Seoul"
+
+# 쿠키 배너처럼 매번 뜨는 방해 요소는 여기에 적어두면 자동으로 닫습니다.
+dismiss:
+  - "button:has-text('동의')"
+  - "button:has-text('닫기')"
+  - "[aria-label='close']"
+
+# 마우스 커서를 화면에 그려서 클릭이 눈에 보이게 합니다 (영상용)
+showCursor: true
+
+steps:
+  - caption: "항공권, 아직도 손으로 비교하세요?"
+    pause: 1.2
+
+  - caption: "출발지만 넣으면 끝"
+    click: { text: "항공권" }
+
+  - fill: { selector: "input[name='origin']", value: "서울", typeDelay: 90 }
+    caption: "서울에서 출발"
+
+  - fill: { selector: "input[name='destination']", value: "홍콩", typeDelay: 90 }
+    caption: "도착지는 홍콩"
+
+  - click: { text: "검색" }
+    caption: "검색 한 번이면"
+
+  - wait: { selector: "[data-testid='result-list']", timeout: 15 }
+
+  - scroll: { to: "bottom", duration: 2.5 }
+    caption: "왕복 최저가부터 순서대로"
+
+  - highlight: "[data-testid='result-list'] > *:first-child"
+    caption: "여기, 이 가격 보세요"
+    pause: 2.0

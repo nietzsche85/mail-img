@@ -21,7 +21,10 @@ export class Screencast {
     this.client.on("Page.screencastFrame", async (frame) => {
       const file = path.join(this.dir, `f_${String(this.frames.length).padStart(6, "0")}.jpg`);
       fs.writeFileSync(file, Buffer.from(frame.data, "base64"));
-      this.frames.push({ file, ts: frame.metadata.timestamp ?? Date.now() / 1000, wall: Date.now() / 1000 });
+      // metadata.timestamp 는 프레임이 실제로 그려진 시각(epoch 초)이라
+      // 이벤트가 늦게 전달돼도 흔들리지 않습니다.
+      const ts = frame.metadata.timestamp ?? Date.now() / 1000;
+      this.frames.push({ file, ts });
       try { await this.client.send("Page.screencastFrameAck", { sessionId: frame.sessionId }); }
       catch { /* 페이지가 이미 닫혔으면 무시 */ }
     });
@@ -48,7 +51,7 @@ export class Screencast {
     for (let i = 0; i < this.frames.length; i++) {
       const next = this.frames[i + 1];
       const d = next ? Math.min(2, Math.max(1 / 60, next.ts - this.frames[i].ts)) : 1 / fps;
-      this.timeMap.push({ wall: this.frames[i].wall - t0, video: cursor });
+      this.timeMap.push({ wall: this.frames[i].ts - t0, video: cursor });
       cursor += d;
       lines.push(`file '${path.basename(this.frames[i].file)}'`, `duration ${d.toFixed(4)}`);
     }
@@ -56,9 +59,13 @@ export class Screencast {
     lines.push(`file '${path.basename(this.frames.at(-1).file)}'`);
     fs.writeFileSync(listFile, lines.join("\n"));
 
+    // fps 필터는 여기서 쓰지 않습니다. 화면이 멈춰 있던 구간(긴 duration)을 만나면
+    // 앞부분을 통째로 버리고 start 를 밀어버려 영상 뒷부분이 잘립니다.
+    // 프레임 간격을 그대로 살린 VFR 로 두고, 30fps 변환은 렌더 단계에서 합니다.
     await ff.run([
       "-f", "concat", "-safe", "0", "-i", listFile,
-      "-vf", `fps=${fps},scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=black`,
+      "-vf", `scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=black`,
+      "-fps_mode", "vfr",
       "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p",
       outFile,
     ]);

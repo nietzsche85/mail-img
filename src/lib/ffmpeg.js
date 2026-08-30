@@ -31,11 +31,22 @@ export function run(args, { quiet = true } = {}) {
   });
 }
 
-/** ffprobe 없이 ffmpeg 만으로 길이를 잽니다. */
+/**
+ * ffprobe 없이 ffmpeg 만으로 길이를 잽니다.
+ * 컨테이너 헤더의 Duration 을 먼저 봅니다. 진행 로그(time=)는 마지막 줄이 실제 끝보다
+ * 앞설 수 있어서, 그걸로 자르면 영상 뒷부분이 날아갑니다.
+ */
 export async function duration(file) {
-  const stderr = await run(["-i", file, "-f", "null", "-"], { quiet: false }).catch((e) => String(e));
-  const matches = [...String(stderr).matchAll(/time=(\d+):(\d+):(\d+\.\d+)/g)];
-  if (!matches.length) return 0;
-  const [, h, m, s] = matches[matches.length - 1];
+  const stderr = String(
+    await run(["-i", file, "-f", "null", "-"], { quiet: false }).catch((e) => String(e))
+  );
+  const header = stderr.match(/Duration:\s*(\d+):(\d+):(\d+\.\d+)/);
+  if (header) {
+    const [, h, m, s] = header;
+    return Number(h) * 3600 + Number(m) * 60 + Number(s);
+  }
+  const progress = [...stderr.matchAll(/time=(\d+):(\d+):(\d+\.\d+)/g)];
+  if (!progress.length) return 0;
+  const [, h, m, s] = progress[progress.length - 1];
   return Number(h) * 3600 + Number(m) * 60 + Number(s);
 }

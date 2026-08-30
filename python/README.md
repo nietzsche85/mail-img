@@ -1,0 +1,232 @@
+# SNS 오토파일럿 (Python)
+
+홈페이지를 **자동으로 조작·녹화**해서 숏츠와 GIF를 만들고, **블로그를 분석**해 바이럴 문구와 홍보 이미지를 뽑은 뒤, **SNS에 자동 발행**하는 파이프라인입니다.
+
+```
+블로그 분석 ──┐
+              ├─→ Claude 카피 생성 ─→ 숏츠 mp4 · GIF · 홍보 이미지 ─→ 자동 발행
+홈페이지 녹화 ─┘
+```
+
+한글 폰트를 동봉해서 **인터넷 없이도 자막·이미지가 깨지지 않습니다.**
+
+---
+
+## 1. 설치
+
+```bash
+python -m venv .venv && source .venv/bin/activate     # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+playwright install chromium
+
+cp .env.example .env      # ANTHROPIC_API_KEY 만 채우면 시작 가능
+python -m sns_autopilot doctor
+```
+
+`doctor` 가 Python 버전, ffmpeg, Chromium, 한글 폰트, API 키, 연결된 발행 채널을 한 번에 점검합니다.
+
+> ffmpeg 는 `imageio-ffmpeg` 가 받아둔 정적 바이너리를 씁니다. 따로 설치할 필요가 없습니다.
+> 시스템 ffmpeg 를 쓰고 싶으면 `FFMPEG_PATH` 환경변수로 지정하세요.
+
+## 2. 5분 만에 돌려보기
+
+포함된 데모 사이트로 전체 흐름을 확인합니다. **인터넷 연결도, SNS 계정도 필요 없습니다.**
+
+```bash
+python -m sns_autopilot capture --flow config/flows/demo.yaml   # 자동 조작 + 녹화
+python -m sns_autopilot copy   --latest                         # 카피 생성 (Claude)
+python -m sns_autopilot render --latest                         # 숏츠 mp4 + GIF
+python -m sns_autopilot image  --latest                         # 홍보 이미지 카드
+python -m sns_autopilot publish --latest                        # 미리보기 (실제 발행 X)
+```
+
+결과는 전부 `out/<실행ID>/` 에 쌓입니다.
+
+```
+out/20260830-225901/
+├── capture/   recording.mp4, step-01.png…, timeline.json, frames/
+├── render/    shorts.mp4, preview.gif, cover.png, intro.png, caption-*.png
+├── images/    feed.png (1080×1350), story.png (1080×1920), og.png (1200×630)
+├── copy/      copy.json  ← 플랫폼별 문구 전문
+├── queue/     instagram-v1.txt, x-v1.txt … ← 손으로 올릴 때 복붙용
+└── publish-report.json
+```
+
+`pip install -e .` 로 설치하면 `sns-autopilot <명령>` 으로도 쓸 수 있습니다.
+
+---
+
+## 3. 내 사이트로 바꾸기
+
+### 녹화 시나리오
+
+`config/pipeline.yaml` 의 `capture.flow` 는 처음엔 데모를 가리킵니다.
+내 사이트로 바꾸려면 `config/flows/example-homepage.yaml` 을 복사해 고친 뒤 그 경로를 적어주세요.
+
+```yaml
+name: "서울 → 홍콩 항공권 검색"
+url: "https://mysite.com"
+viewport: { width: 540, height: 960, deviceScaleFactor: 2 }
+showCursor: true          # 마우스 커서와 클릭 파장을 화면에 그려줍니다
+
+dismiss:                  # 쿠키 배너처럼 매번 뜨는 건 여기 적으면 자동으로 닫습니다
+  - "button:has-text('동의')"
+
+steps:
+  - caption: "항공권, 아직도 **손으로** 비교하세요?"   # **강조** 는 포인트 색으로 표시
+    pause: 1.4
+  - fill: { selector: "#origin", value: "서울", typeDelay: 110 }
+    caption: "출발지만 넣으면"
+  - click: { text: "검색" }
+  - wait: { selector: "[data-testid='result-list']", timeout: 15 }
+  - scroll: { to: "bottom", duration: 2.2 }
+  - highlight: "#result-list .row:first-child"
+    caption: "**28만원대** 특가까지"
+    pause: 2.0
+```
+
+쓸 수 있는 동작:
+
+| 동작 | 예시 | 설명 |
+|---|---|---|
+| `goto` | `goto: https://...` | 페이지 이동 |
+| `click` | `click: { text: "검색" }` / `{ selector: "#btn" }` / `{ role: button, name: 로그인 }` | 마우스가 부드럽게 이동한 뒤 클릭합니다 |
+| `fill` | `fill: { selector: "#id", value: "서울", typeDelay: 90 }` | 한 글자씩 타이핑 |
+| `press` | `press: Enter` | 키 입력 |
+| `hover` | `hover: ".card"` | 마우스 올리기 |
+| `select` | `select: { selector: "#sort", value: "price" }` | 드롭다운 선택 |
+| `scroll` | `scroll: { to: bottom, duration: 2.5 }` | 사람처럼 부드럽게 스크롤 |
+| `highlight` | `highlight: ".row:first-child"` | 강조 테두리 + 펄스 |
+| `wait` | `wait: 2` / `wait: { selector: "...", timeout: 15 }` | 대기 |
+| `screenshot` | `screenshot: result` | 스크린샷 저장 |
+
+모든 스텝에 `caption:`(자막), `pause:`(끝난 뒤 대기 초), `optional: true`(실패해도 계속)를 붙일 수 있습니다.
+로그인이 필요하면 `.env` 의 값을 `${SITE_ID}` 처럼 참조하세요.
+
+### 브랜드·발행 설정
+
+`config/pipeline.yaml` 에서 톤앤매너, 금칙어, 색상, 플랫폼, 발행 대상을 정합니다.
+
+```yaml
+brand:
+  name: "마이리얼트립"
+  voice: "여행 준비하는 20~30대에게 말 걸듯, 구체적인 숫자와 혜택 중심으로. 해요체."
+  banned: ["최저가 보장", "무조건", "100% 환불"]   # 이 표현이 나오면 경고하고 기록합니다
+  colors: { bg: "#0B3D91", accent: "#4FC3F7", highlight: "#FFD54F" }
+
+blog:
+  feed: "https://blog.mysite.com/rss"   # 주소만 줘도 RSS 위치를 찾아냅니다
+  limit: 3
+
+publish:
+  targets: [postiz]     # file | webhook | postiz | x | threads | instagram | youtube
+```
+
+---
+
+## 4. 자동 발행
+
+기본은 **미리보기(dry-run)** 입니다. `--publish` 를 붙여야 실제로 올라갑니다.
+
+```bash
+python -m sns_autopilot run --publish                      # 전체 자동
+python -m sns_autopilot publish --latest --target postiz --publish
+python -m sns_autopilot publish --latest --variant 2 --publish   # B안으로 발행
+```
+
+채널별 토큰 발급 방법과 정책 주의사항은 **[docs/PLATFORM-GUIDE.md](docs/PLATFORM-GUIDE.md)** 에 정리해 두었습니다.
+가장 손이 덜 가는 방법은 **Postiz** 하나만 연결하는 것입니다 (X·인스타·스레드·유튜브·틱톡·링크드인 등 28개 채널을 한 API로 처리).
+
+매일 자동으로 돌리려면 `deploy/github-actions.yml` 을 `.github/workflows/` 에 복사하고,
+저장소 Secrets 에 `.env.example` 의 키들을 등록하면 됩니다.
+
+---
+
+## 5. 명령어
+
+```
+run          전체 파이프라인
+capture      홈페이지 자동 조작 + 녹화 (새 실행 생성)
+analyze      블로그 글 수집·분석
+copy         카피 생성 (Claude)
+render       녹화본 → 숏츠 mp4 + GIF
+image        홍보 이미지 카드 생성
+publish      발행 (기본 미리보기, --publish 로 실제 발행)
+doctor       실행 환경 점검
+```
+
+옵션: `--config` `--flow` `--url` `--feed` `--run <ID>` `--latest` `--variant <n>` `--target <이름>` `--publish` `--headed`
+
+---
+
+## 6. 만들면서 걸렸던 것 (읽어두면 고칠 때 편합니다)
+
+**Playwright 내장 녹화는 세로 영상에 못 씁니다.** CSS 픽셀 크기로만 저장돼서 1080×1920으로 키우면 뿌옇습니다.
+그래서 CDP `Page.startScreencast` 로 실제 디바이스 픽셀 프레임을 직접 받습니다.
+
+**동기 API에서는 `time.sleep()` 동안 프레임이 하나도 안 옵니다.**
+Playwright 동기 API는 자기 호출 안에서만 이벤트를 펌프하기 때문에, `time.sleep(2)` 하면 그 2초 동안 화면 캐스트 프레임이
+전혀 전달되지 않고 나중에 몰려서 도착합니다. 그래서 대기는 전부 `page.wait_for_timeout()` 을 씁니다.
+(같은 시나리오에서 프레임 수가 179장 → 350장으로 늘었습니다.)
+
+**자막 시각은 프레임 메타데이터의 epoch 시각으로 계산합니다.**
+핸들러가 실행된 시각을 쓰면 이벤트 전달이 밀릴 때 자막이 어긋납니다.
+화면이 안 바뀌면 프레임이 오지 않아 영상 길이가 실제 조작 시간보다 짧으므로,
+"실제 시각 → 영상 시각" 대응표를 만들어 자막 위치를 다시 계산합니다.
+
+**프레임을 이어붙일 때 `fps` 필터를 쓰면 안 됩니다.**
+화면이 멈춰 있던 긴 구간을 만나면 앞부분을 통째로 버리고 시작 시각을 밀어버립니다
+(실측: 11.7초 영상이 9.6초로 잘리고 뒷부분이 날아감). VFR로 두고 30fps 변환은 렌더 단계에서 합니다.
+
+**영상 길이는 컨테이너 헤더의 `Duration` 으로 읽습니다.**
+진행 로그(`time=`)의 마지막 줄은 실제 끝보다 앞설 수 있어서, 그 값으로 자르면 뒷부분이 잘립니다.
+
+**한글 페이지는 인코딩을 직접 정해야 합니다.**
+`requests` 는 Content-Type 에 charset 이 없으면 ISO-8859-1 로 가정합니다. 그대로 두면 한글이 전부 깨진 채
+모델에 들어갑니다. 헤더에 charset 이 없으면 `<meta charset>` → 바이트 추정 순으로 직접 정합니다.
+(국내 구형 블로그에 흔한 EUC-KR 도 이 경로로 처리됩니다.)
+
+**카드 배경 사진은 data: URI 로 심습니다.**
+`set_content` 로 띄운 페이지는 about:blank 출신이라 `file://` 이미지를 못 불러옵니다. 원격 og:image 도
+렌더 시점에 죽어 있을 수 있어서, 둘 다 미리 바이트로 받아 인라인합니다. 실패하면 사진 없는 레이아웃으로 자동 전환됩니다.
+
+**한글은 ffmpeg 로 그리지 않습니다.** `drawtext` 는 폰트 문제가 잦고 정적 빌드엔 아예 없는 경우도 있습니다.
+자막·인트로·아웃트로·이미지 카드는 전부 크롬에서 CSS로 그린 뒤 PNG로 얹습니다.
+디자인을 바꾸려면 `templates/card.html` 과 `sns_autopilot/render/cards.py` 만 고치면 됩니다.
+
+**과장광고 방지** — 원문에 없는 숫자·할인율을 만들지 않도록 지시하고, `banned` 목록은 코드로 한 번 더 걸러
+`copy.json` 의 `risky_claims` 에 남깁니다. **발행 전에 이 항목은 사람이 확인하세요.**
+
+**계정 정책** — SNS 발행은 각 플랫폼의 **공식 API**로만 합니다.
+브라우저 자동 조작으로 SNS에 로그인해 글을 올리는 방식은 대부분 약관 위반이고 계정 정지 사유라서 넣지 않았습니다.
+브라우저 자동화는 "내 홈페이지를 녹화하는 용도"로만 씁니다.
+
+---
+
+## 7. 구조
+
+```
+sns_autopilot/
+├── cli.py                 명령줄 진입점 (argparse)
+├── pipeline.py            단계 조립 (manifest.json 으로 이어붙임)
+├── config.py              YAML 로딩 · .env · ${ENV} 치환
+├── paths.py               실행 폴더 구조
+├── ffmpeg.py              ffmpeg 실행 래퍼
+├── capture/
+│   ├── recorder.py        시나리오 실행 + 녹화
+│   ├── screencast.py      CDP 프레임 캡처 + 시간축 대응표
+│   └── cursor.py          마우스 커서·클릭 파장 오버레이
+├── render/
+│   ├── shorts.py          숏츠 mp4 + GIF
+│   ├── cards.py           인트로·아웃트로·자막 HTML
+│   └── html2png.py        HTML → PNG (동봉 한글 폰트 인라인)
+├── analyze/blog.py        RSS 탐색 · 본문 추출 · 중복 방지
+├── generate/
+│   ├── copy.py            Claude 구조화 출력(pydantic)으로 플랫폼별 카피
+│   ├── prompts.py         플랫폼별 규칙·브랜드 프롬프트
+│   └── image.py           홍보 이미지 카드
+└── publish/
+    ├── __init__.py        발행 라우팅 (dry-run 기본)
+    ├── compose.py         본문·해시태그 조합, 글자 수 제한
+    └── adapters/          file · webhook · postiz · x · threads · instagram · youtube
+```

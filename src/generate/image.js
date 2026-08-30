@@ -11,6 +11,33 @@ function fill(template, vars) {
   return template.replace(/\{\{(\w+)\}\}/g, (_, key) => (vars[key] !== undefined ? String(vars[key]) : ""));
 }
 
+const MIME = { ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".gif": "image/gif" };
+
+/**
+ * 배경 사진을 data: URI 로 바꿔 페이지에 심습니다.
+ * setContent 로 띄운 페이지는 about:blank 출신이라 file:// 이미지를 못 불러오고,
+ * 원격 URL 은 렌더 시점에 죽어 있을 수 있습니다. 둘 다 미리 바이트로 받아 넣습니다.
+ * 실패하면 빈 문자열 — 사진 없는 레이아웃으로 자동 전환됩니다.
+ */
+async function asDataUri(source) {
+  if (!source) return "";
+  if (String(source).startsWith("data:")) return String(source);
+  try {
+    if (/^https?:\/\//.test(source)) {
+      const res = await fetch(source);
+      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+      const mime = (res.headers.get("content-type") ?? "image/jpeg").split(";")[0];
+      const buffer = Buffer.from(await res.arrayBuffer());
+      return `data:${mime};base64,${buffer.toString("base64")}`;
+    }
+    const mime = MIME[path.extname(source).toLowerCase()] ?? "image/png";
+    return `data:${mime};base64,${fs.readFileSync(source).toString("base64")}`;
+  } catch (e) {
+    log.warn(`배경 사진을 못 불러왔습니다 — 사진 없는 레이아웃으로 갑니다 (${e.message})`);
+    return "";
+  }
+}
+
 /**
  * 카피의 card 필드로 SNS 규격별 홍보 이미지를 굽습니다.
  * 배경 사진은 블로그 og:image 를 그대로 씁니다 (없으면 그라디언트).
@@ -21,7 +48,7 @@ export async function generateImages({ copy, brand, image: cfg, article, paths, 
   const template = fs.readFileSync(templateFile, "utf8");
 
   const card = copy.card ?? {};
-  const bg = article?.image || (fallbackImage ? `file://${fallbackImage}` : "");
+  const bg = await asDataUri(article?.image || fallbackImage);
   const colors = brand.colors ?? {};
 
   const jobs = cfg.sizes.map((size) => {

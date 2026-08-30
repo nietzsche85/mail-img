@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>데모 항공권 검색</title>
+<style>
+  :root{--bg:#0B3D91;--accent:#4FC3F7}
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:system-ui,-apple-system,"Noto Sans KR",sans-serif;background:#f4f6fb;color:#14213d}
+  header{background:linear-gradient(160deg,var(--bg),#04122f);color:#fff;padding:28px 20px 40px}
+  header h1{font-size:22px;letter-spacing:-.02em}
+  header p{opacity:.75;font-size:13px;margin-top:6px}
+  .card{margin:-24px 16px 0;background:#fff;border-radius:18px;padding:18px;box-shadow:0 10px 30px rgba(10,30,80,.12)}
+  label{display:block;font-size:12px;font-weight:700;color:#5a6480;margin:12px 0 6px}
+  input{width:100%;padding:14px;border:1.5px solid #dde3f0;border-radius:12px;font-size:16px}
+  input:focus{outline:none;border-color:var(--accent)}
+  button{width:100%;margin-top:18px;padding:15px;border:0;border-radius:12px;background:var(--bg);
+    color:#fff;font-size:16px;font-weight:800}
+  #result-list{margin:20px 16px 40px;display:none;flex-direction:column;gap:12px}
+  #result-list.on{display:flex}
+  .row{background:#fff;border-radius:14px;padding:16px;box-shadow:0 4px 14px rgba(10,30,80,.08)}
+  .route{font-weight:800;font-size:15px}
+  .meta{font-size:12px;color:#6b7590;margin-top:4px}
+  .price{margin-top:10px;font-size:20px;font-weight:900;color:var(--bg)}
+  .tag{display:inline-block;font-size:11px;font-weight:700;color:var(--accent);
+    border:1px solid var(--accent);border-radius:999px;padding:3px 9px;margin-top:8px}
+</style></head>
+<body>
+  <header><h1>어디로 떠나시나요?</h1><p>왕복 항공권을 한 번에 비교해 드려요</p></header>
+  <div class="card">
+    <label for="origin">출발</label>
+    <input id="origin" name="origin" placeholder="도시 또는 공항">
+    <label for="destination">도착</label>
+    <input id="destination" name="destination" placeholder="도시 또는 공항">
+    <button id="search">검색</button>
+  </div>
+  <div id="result-list" data-testid="result-list"></div>
+<script>
+  const DATA = [
+    { air: "대한항공", time: "09:20 → 12:35", price: "312,400원", tag: "직항 · 최저가" },
+    { air: "아시아나항공", time: "13:05 → 16:20", price: "338,900원", tag: "직항" },
+    { air: "캐세이퍼시픽", time: "18:40 → 21:55", price: "351,200원", tag: "직항 · 수하물 포함" },
+    { air: "제주항공", time: "07:10 → 10:40", price: "289,000원", tag: "특가" },
+  ];
+  document.getElementById("search").addEventListener("click", () => {
+    const from = document.getElementById("origin").value || "서울";
+    const to = document.getElementById("destination").value || "홍콩";
+    const list = document.getElementById("result-list");
+    list.innerHTML = DATA.map(d => `
+      <div class="row">
+        <div class="route">${from} → ${to} · ${d.air}</div>
+        <div class="meta">${d.time}</div>
+        <div class="price">${d.price}</div>
+        <div class="tag">${d.tag}</div>
+      </div>`).join("");
+    setTimeout(() => list.classList.add("on"), 350);
+  });
+</script>
+</body></html>
