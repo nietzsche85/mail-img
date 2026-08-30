@@ -53,7 +53,11 @@ export async function generateCopy({ article, timeline, brand, copy: cfg, paths 
   const client = new Anthropic();
 
   log.step(`카피 생성 (${cfg.model}, ${cfg.platforms.join(", ")})`);
-  const response = await client.messages.parse({
+
+  // messages.parse() 를 쓰면 응답 검증에 실패했을 때 SDK 가 먼저 예외를 던져서
+  // 아래 거절/파싱 검사까지 오지 못합니다. 그래서 create() 로 원본 응답을 받고
+  // 스키마 검증은 직접 합니다 (zodOutputFormat 은 공개 헬퍼라 그대로 씁니다).
+  const response = await client.messages.create({
     model: cfg.model,
     max_tokens: 16000,
     thinking: { type: "adaptive" },
@@ -77,8 +81,17 @@ export async function generateCopy({ article, timeline, brand, copy: cfg, paths 
   if (response.stop_reason === "refusal") {
     throw new Error(`모델이 요청을 거절했습니다 (${response.stop_details?.category ?? "unknown"}). 소재를 확인해주세요.`);
   }
-  const result = response.parsed_output;
-  if (!result) throw new Error("구조화된 응답을 파싱하지 못했습니다.");
+
+  const raw = response.content.find((block) => block.type === "text")?.text ?? "";
+  let result;
+  try {
+    result = CopySchema.parse(JSON.parse(raw));
+  } catch (e) {
+    const reason = raw.trim()
+      ? `모델이 형식에 맞지 않는 응답을 돌려줬습니다: ${raw.slice(0, 120)}…`
+      : "모델이 빈 응답을 돌려줬습니다. 요청을 거절했거나 응답이 잘렸을 수 있습니다.";
+    throw new Error(`카피 생성 실패 — ${reason}\n  소재를 바꾸거나 copy.platforms / copy.variants 를 줄여서 다시 시도해보세요.`);
+  }
 
   // 브랜드 금칙어는 코드로 한 번 더 거릅니다 (모델 실수 방지).
   const banned = brand.banned ?? [];

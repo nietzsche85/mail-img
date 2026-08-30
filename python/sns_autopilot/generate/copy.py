@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Any
 
 import anthropic
+import pydantic
 from pydantic import BaseModel, Field
 
 from .. import log
@@ -68,25 +69,42 @@ def generate_copy(article: dict | None, timeline: dict | None, brand: dict,
     platforms = copy_config["platforms"]
     log.step(f"카피 생성 ({copy_config['model']}, {', '.join(platforms)})")
 
-    response = client.messages.parse(
-        model=copy_config["model"],
-        max_tokens=16000,
-        thinking={"type": "adaptive"},
-        system=system_prompt(brand),
-        messages=[{
-            "role": "user",
-            "content": user_prompt(
-                article=article,
-                screen_text=screen_summary(timeline),
-                platforms=platforms,
-                variants=copy_config["variants"],
-                language=copy_config["language"],
-            ),
-        }],
-        output_format=CopyResult,
-        output_config={"effort": copy_config.get("effort", "high")},
-    )
+    try:
+        response = client.messages.parse(
+            model=copy_config["model"],
+            max_tokens=16000,
+            thinking={"type": "adaptive"},
+            system=system_prompt(brand),
+            messages=[{
+                "role": "user",
+                "content": user_prompt(
+                    article=article,
+                    screen_text=screen_summary(timeline),
+                    platforms=platforms,
+                    variants=copy_config["variants"],
+                    language=copy_config["language"],
+                ),
+            }],
+            output_format=CopyResult,
+            output_config={"effort": copy_config.get("effort", "high")},
+        )
+    except pydantic.ValidationError as exc:
+        # parse() 는 응답을 스키마로 검증하다 실패하면 여기서 바로 예외를 던집니다.
+        # 아래 stop_reason 검사까지 가지 못하므로, 모델이 돌려준 원문을 보고 원인을 나눕니다.
+        # (Node 판은 create() 로 원본 응답을 받아 직접 검증합니다. 파이썬 SDK 는
+        #  스키마 변환 헬퍼가 비공개라 parse() 를 그대로 쓰는 편이 안전합니다.)
+        errors = exc.errors()
+        raw = str(errors[0].get("input", "")) if errors else ""
+        if not raw.strip():
+            reason = "모델이 빈 응답을 돌려줬습니다. 요청을 거절했을 수 있습니다 (민감한 소재)."
+        else:
+            reason = f"모델이 형식에 맞지 않는 응답을 돌려줬습니다: {raw[:120]}…"
+        raise RuntimeError(
+            f"카피 생성 실패 — {reason}\n"
+            "  소재를 바꾸거나 copy.platforms / copy.variants 를 줄여서 다시 시도해보세요."
+        ) from exc
 
+    # 응답이 정상적으로 왔는데 내용이 비어 있는 경우까지 한 번 더 거릅니다.
     if response.stop_reason == "refusal":
         category = getattr(response.stop_details, "category", None) or "unknown"
         raise RuntimeError(f"모델이 요청을 거절했습니다 ({category}). 소재를 확인해주세요.")
