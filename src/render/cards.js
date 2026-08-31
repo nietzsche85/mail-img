@@ -25,9 +25,14 @@ export function captionHtml(text, { width, height, brand }) {
   </style><div class="box"><div class="t">${emphasize(text, c.highlight)}</div></div>`;
 }
 
-/** 첫 1.5초를 잡는 훅 카드. */
+/**
+ * 첫 1.5초를 잡는 훅 카드.
+ * 위쪽 배지는 기본으로 넣지 않습니다. 브랜드 이름이 첫 화면에 박히면
+ * 광고처럼 보여서 이탈이 늘어납니다. 넣고 싶으면 설정에 brand.badge 를 적으세요.
+ */
 export function introHtml({ hook, sub, brand, width, height }) {
   const c = palette(brand);
+  const badge = brand?.badge ?? "";
   return `<!doctype html><meta charset="utf-8"><style>${BASE_CSS}
   body{background:linear-gradient(160deg,${c.bg} 0%,#04122f 100%);color:${c.text};
     display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 80px;text-align:center}
@@ -37,7 +42,7 @@ export function introHtml({ hook, sub, brand, width, height }) {
   .sub{margin-top:36px;font-size:${Math.round(width * 0.041)}px;font-weight:500;opacity:.82}
   .bar{margin-top:64px;width:120px;height:8px;border-radius:8px;background:${c.accent}}
   </style>
-  <div class="badge">${esc(brand?.name ?? "")}</div>
+  ${badge ? `<div class="badge">${esc(badge)}</div>` : ""}
   <div class="hook">${emphasize(hook, c.highlight)}</div>
   ${sub ? `<div class="sub">${esc(sub)}</div>` : ""}
   <div class="bar"></div>`;

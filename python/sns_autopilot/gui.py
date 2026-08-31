@@ -35,6 +35,8 @@ class App:
         self.queue: queue.Queue[tuple[str, object]] = queue.Queue()
         self.busy = False
         self.result_dir: Path | None = None
+        self.manual_commands: "queue.Queue[str] | None" = None
+        self.manual_state = "idle"     # idle → opened → recording
 
         root.title("SNS 오토파일럿")
         root.minsize(680, 560)
@@ -91,6 +93,23 @@ class App:
                                       state="disabled")
         self.open_button.pack(side=RIGHT)
 
+        # ── 수동 녹화 ───────────────────────────────────────
+        manual = ttk.LabelFrame(outer, text="수동 녹화 (브라우저를 직접 조작하며 원하는 구간만 담기)",
+                                padding=PAD)
+        manual.pack(fill=X, pady=(0, PAD))
+        self.open_browser_button = ttk.Button(manual, text="브라우저 열기",
+                                              command=self.open_browser)
+        self.open_browser_button.pack(side=LEFT)
+        self.record_button = ttk.Button(manual, text="● 녹화 시작",
+                                        command=lambda: self.send_manual("start"), state="disabled")
+        self.record_button.pack(side=LEFT, padx=6)
+        self.stop_button = ttk.Button(manual, text="■ 녹화 종료 + 인코딩",
+                                      command=lambda: self.send_manual("stop"), state="disabled")
+        self.stop_button.pack(side=LEFT)
+        self.cancel_button = ttk.Button(manual, text="취소",
+                                        command=lambda: self.send_manual("cancel"), state="disabled")
+        self.cancel_button.pack(side=RIGHT)
+
         # ── 진행 상황 ───────────────────────────────────────
         self.progress = ttk.Progressbar(outer, mode="determinate", maximum=100)
         self.progress.pack(fill=X)
@@ -129,6 +148,11 @@ class App:
         if kind in ("step", "ok"):
             self.status.set(str(message).splitlines()[0])
 
+    def clear_log(self) -> None:
+        self.log_view.configure(state="normal")
+        self.log_view.delete("1.0", END)
+        self.log_view.configure(state="disabled")
+
     def drain(self) -> None:
         try:
             while True:
@@ -139,6 +163,8 @@ class App:
                     self.progress["value"] = payload
                 elif event == "done":
                     self.finish(payload)
+                elif event == "manual_state":
+                    self.set_manual_state(str(payload))
                 elif event == "failed":
                     self.finish(None, error=str(payload))
         except queue.Empty:
@@ -163,9 +189,7 @@ class App:
             button.configure(state="disabled")
         self.open_button.configure(state="disabled")
         self.progress["value"] = 0
-        self.log_view.configure(state="normal")
-        self.log_view.delete("1.0", END)
-        self.log_view.configure(state="disabled")
+        self.clear_log()
 
         params = {
             "url": url,
@@ -175,6 +199,79 @@ class App:
             "headed": self.headed.get(),
         }
         threading.Thread(target=self.worker, args=(job, params), daemon=True).start()
+
+    # ── 수동 녹화 ───────────────────────────────────────────
+    def set_manual_state(self, state: str) -> None:
+        """브라우저가 열렸는지/녹화 중인지에 따라 버튼을 켜고 끕니다."""
+        self.manual_state = state
+        opened = state == "opened"
+        recording = state == "recording"
+        self.record_button.configure(state="normal" if opened else "disabled")
+        self.stop_button.configure(state="normal" if recording else "disabled")
+        self.cancel_button.configure(state="normal" if (opened or recording) else "disabled")
+        self.open_browser_button.configure(state="disabled" if (opened or recording) else "normal")
+        if recording:
+            self.status.set("● 녹화 중 — 브라우저에서 보여줄 동작을 하고 '녹화 종료' 를 누르세요.")
+        elif opened:
+            self.status.set("브라우저가 열렸습니다. 화면을 맞춘 뒤 '녹화 시작' 을 누르세요.")
+
+    def send_manual(self, command: str) -> None:
+        if self.manual_commands:
+            self.manual_commands.put(command)
+
+    def open_browser(self) -> None:
+        """브라우저를 띄우고, 시작·종료 지시를 기다립니다."""
+        if self.busy:
+            return
+        url = self.url.get().strip()
+        if not url:
+            messagebox.showwarning("주소가 없습니다", "홈페이지 주소를 넣어주세요.")
+            return
+        if not url.startswith(("http://", "https://")):
+            url = f"https://{url}"
+            self.url.set(url)
+
+        self.busy = True
+        for button in (self.run_button, self.capture_button, self.render_button):
+            button.configure(state="disabled")
+        self.open_button.configure(state="disabled")
+        self.open_browser_button.configure(state="disabled")
+        self.progress["value"] = 0
+        self.clear_log()
+
+        self.manual_commands = queue.Queue()
+        params = {
+            "url": url,
+            "caption": self.caption.get().strip(),
+            "viewport": VIEWPORTS[self.viewport.get()],
+        }
+        threading.Thread(target=self.manual_worker, args=(params,), daemon=True).start()
+
+    def manual_worker(self, params: dict) -> None:
+        from . import log, pipeline
+        from .capture import RecordingCancelled
+
+        log.set_sink(self.from_thread)
+        try:
+            options = {
+                **params,
+                "commands": self.manual_commands,
+                "on_state": lambda state: self.queue.put(("manual_state", state)),
+            }
+            ctx = pipeline.open_run(options)
+            pipeline.step_manual_capture(ctx, options)
+            self.queue.put(("progress", 60))
+            media = pipeline.step_render(ctx, options)
+            self.queue.put(("progress", 100))
+            self.queue.put(("done", {"dir": ctx.paths.base, "media": media}))
+        except RecordingCancelled:
+            self.queue.put(("done", None))
+        except Exception as exc:  # noqa: BLE001
+            self.queue.put(("failed", exc))
+        finally:
+            log.set_sink(None)
+            self.manual_commands = None
+            self.queue.put(("manual_state", "idle"))
 
     def worker(self, job: str, params: dict) -> None:
         """작업 스레드. 여기서만 무거운 모듈을 불러옵니다."""
@@ -214,6 +311,11 @@ class App:
             self.status.set("실패했습니다. 진행 기록을 확인해주세요.")
             self.append_log("error", error)
             messagebox.showerror("실패", error.splitlines()[0])
+            return
+
+        if payload is None:      # 수동 녹화 취소
+            self.progress["value"] = 0
+            self.status.set("취소했습니다. 다시 시작하실 수 있습니다.")
             return
 
         self.result_dir = Path(payload["dir"])

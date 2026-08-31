@@ -7,7 +7,7 @@ from typing import Any, Callable
 
 from . import log
 from .analyze import collect_articles
-from .capture import capture, simple_flow
+from .capture import capture, record_manually, simple_flow
 from .config import load_config, load_yaml, resolve
 from .generate import generate_copy, generate_images
 from .paths import RunPaths, latest_run, new_run_id, read_json, write_json
@@ -60,6 +60,21 @@ def step_capture(ctx: Context, options: dict) -> dict:
 
     result = capture(flow, ctx.paths, headless=not options.get("headed"))
     ctx.save(flow=str(flow_file), video=result["video"],
+             timeline=result["timeline"], shots=result["shots"])
+    return result
+
+
+def step_manual_capture(ctx: Context, options: dict) -> dict:
+    """브라우저를 띄워 두고 사람이 시작·종료를 누르는 녹화."""
+    result = record_manually(
+        url=options.get("url") or "",
+        paths=ctx.paths,
+        viewport=options.get("viewport"),
+        caption=options.get("caption") or "",
+        commands=options.get("commands"),
+        on_state=options.get("on_state"),
+    )
+    ctx.save(flow="(수동 녹화)", video=result["video"],
              timeline=result["timeline"], shots=result["shots"])
     return result
 

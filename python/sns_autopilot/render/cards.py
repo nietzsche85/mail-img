@@ -43,9 +43,15 @@ def caption_html(text: str, width: int, height: int, brand: dict) -> str:
 
 
 def intro_html(hook: str, sub: str, brand: dict, width: int, height: int) -> str:
-    """첫 1.5초를 잡는 훅 카드."""
+    """첫 1.5초를 잡는 훅 카드.
+
+    위쪽 배지는 기본으로 넣지 않습니다. 브랜드 이름이 첫 화면에 박히면
+    광고처럼 보여서 이탈이 늘어납니다. 넣고 싶으면 설정에 brand.badge 를 적으세요.
+    """
     c = palette(brand)
     sub_block = f'<div class="sub">{_esc(sub)}</div>' if sub else ""
+    badge = (brand or {}).get("badge") or ""
+    badge_block = f'<div class="badge">{_esc(badge)}</div>' if badge else ""
     return f"""<!doctype html><meta charset="utf-8"><style>{base_css()}
   body{{background:linear-gradient(160deg,{c['bg']} 0%,#04122f 100%);color:{c['text']};
     display:flex;flex-direction:column;align-items:center;justify-content:center;
@@ -56,7 +62,7 @@ def intro_html(hook: str, sub: str, brand: dict, width: int, height: int) -> str
   .sub{{margin-top:36px;font-size:{round(width * 0.041)}px;font-weight:500;opacity:.82}}
   .bar{{margin-top:64px;width:120px;height:8px;border-radius:8px;background:{c['accent']}}}
   </style>
-  <div class="badge">{_esc((brand or {}).get('name'))}</div>
+  {badge_block}
   <div class="hook">{_emphasize(hook, c['highlight'])}</div>
   {sub_block}
   <div class="bar"></div>"""
