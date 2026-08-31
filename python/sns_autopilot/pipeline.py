@@ -7,7 +7,7 @@ from typing import Any, Callable
 
 from . import log
 from .analyze import collect_articles
-from .capture import capture
+from .capture import capture, simple_flow
 from .config import load_config, load_yaml, resolve
 from .generate import generate_copy, generate_images
 from .paths import RunPaths, latest_run, new_run_id, read_json, write_json
@@ -43,10 +43,21 @@ def open_run(options: dict) -> Context:
 # ── 개별 단계 ──────────────────────────────────────────────
 
 def step_capture(ctx: Context, options: dict) -> dict:
-    flow_file = options.get("flow") or ctx.config["capture"]["flow"]
-    flow = load_yaml(flow_file)
-    if options.get("url"):
-        flow["url"] = options["url"]
+    # 주소만 주고 시나리오 파일이 없으면 "들어가서 훑어보는" 기본 시나리오를 만듭니다.
+    if options.get("simple_capture") and options.get("url"):
+        flow = simple_flow(
+            options["url"],
+            caption=options.get("caption") or "",
+            scroll_seconds=float(options.get("scroll_seconds") or 6.0),
+            viewport=options.get("viewport"),
+        )
+        flow_file = "(주소로 만든 기본 시나리오)"
+    else:
+        flow_file = options.get("flow") or ctx.config["capture"]["flow"]
+        flow = load_yaml(flow_file)
+        if options.get("url"):
+            flow["url"] = options["url"]
+
     result = capture(flow, ctx.paths, headless=not options.get("headed"))
     ctx.save(flow=str(flow_file), video=result["video"],
              timeline=result["timeline"], shots=result["shots"])
@@ -80,7 +91,8 @@ def step_copy(ctx: Context, options: dict) -> dict:
     return copy
 
 
-def step_render(ctx: Context) -> dict:
+def step_render(ctx: Context, options: dict | None = None) -> dict:
+    options = options or {}
     manifest = ctx.manifest()
     video = manifest.get("video")
     if not video or not Path(video).exists():
@@ -93,7 +105,8 @@ def step_render(ctx: Context) -> dict:
         brand=ctx.config["brand"],
         render_config=ctx.config["render"],
         paths=ctx.paths,
-        hook=copy.get("hook") or ctx.config["brand"]["name"],
+        # GUI 에서 문구를 직접 넣었으면 그것을 첫 화면 훅으로 씁니다.
+        hook=options.get("caption") or copy.get("hook") or ctx.config["brand"]["name"],
         sub=copy.get("hookSub", ""),
         cta=copy.get("cta") or ctx.config["brand"].get("cta", ""),
     )

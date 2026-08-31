@@ -1,6 +1,6 @@
 {
   "name": "mail-img-sns-autopilot",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "description": "홈페이지 자동 조작 녹화 → 숏츠/GIF 생성 → 블로그 분석 → 바이럴 문구·이미지 생성 → SNS 자동 발행 파이프라인",

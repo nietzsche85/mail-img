@@ -62,9 +62,11 @@ echo.
 echo  1) .env 파일을 열어 ANTHROPIC_API_KEY 를 채우세요
 echo     %cd%\.env
 echo.
-echo  2) 실행
+echo  2) 창으로 쓰기 - gui.bat 을 더블클릭하세요
+echo.
+echo  3) 명령줄로 쓰기
 echo     .venv\Scripts\activate
-echo     python -m sns_autopilot capture --flow config/flows/demo.yaml
+echo     python -m sns_autopilot capture --url https://내홈페이지.com
 echo     python -m sns_autopilot copy --latest
 echo ================================================
 goto :done

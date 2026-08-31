@@ -67,9 +67,12 @@ cat <<MSG
  1) .env 파일을 열어 ANTHROPIC_API_KEY 를 채우세요
     $(pwd)/.env
 
- 2) 실행
+ 2) 창으로 쓰기 (주소 넣고 버튼만 누르면 됩니다)
+    bash gui.sh
+
+ 3) 명령줄로 쓰기
     source .venv/bin/activate
-    python -m sns_autopilot capture --flow config/flows/demo.yaml
+    python -m sns_autopilot capture --url https://내홈페이지.com
     python -m sns_autopilot copy --latest
 ────────────────────────────────────────────────
 MSG

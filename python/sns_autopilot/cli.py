@@ -12,6 +12,8 @@ from .paths import ROOT
 
 EPILOG = """예시
   python -m sns_autopilot doctor
+  python -m sns_autopilot gui
+  python -m sns_autopilot capture --url https://example.com
   python -m sns_autopilot capture --flow config/flows/demo.yaml --headed
   python -m sns_autopilot run --url https://blog.example.com/post/123
   python -m sns_autopilot publish --latest --target postiz --publish
@@ -25,6 +27,7 @@ COMMANDS = {
     "render": "녹화본 → 숏츠 mp4 + GIF",
     "image": "홍보 이미지 카드 생성",
     "publish": "발행 (기본은 미리보기, --publish 를 붙여야 실제 발행)",
+    "gui": "주소 넣고 캡쳐·인코딩하는 창 띄우기",
     "channels": "Postiz 에 연결된 채널 목록 보기",
     "doctor": "실행 환경 점검",
 }
@@ -175,10 +178,23 @@ def main(argv: list[str] | None = None) -> int:
         return doctor()
     if args.command == "channels":
         return channels()
+    if args.command == "gui":
+        try:
+            from .gui import main as gui_main
+        except ImportError as exc:      # 리눅스 일부 배포판은 tkinter 가 따로입니다
+            log.error(f"창을 띄울 수 없습니다: {exc}")
+            log.info("  Ubuntu/Debian: sudo apt install python3-tk")
+            log.info("  macOS(homebrew): brew install python-tk")
+            return 1
+        return gui_main()
 
     # capture / run 은 새 실행을 만들고, 나머지는 기본적으로 최근 실행을 이어받습니다.
     if args.command not in ("capture", "run") and not args.run:
         options["latest"] = True
+
+    # capture --url 만 주면 시나리오 파일 없이 "들어가서 훑어보는" 기본 시나리오를 씁니다.
+    if args.command == "capture" and args.url and not args.flow:
+        options["simple_capture"] = True
 
     try:
         if args.command == "run":
