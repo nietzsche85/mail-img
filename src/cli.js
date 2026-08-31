@@ -7,6 +7,7 @@ import { root } from "./lib/paths.js";
 import { ffmpegPath } from "./lib/ffmpeg.js";
 import { koreanFontFace } from "./render/html2png.js";
 import { ADAPTERS } from "./publish/index.js";
+import { integrations, PROVIDER_ALIASES, postiz } from "./publish/adapters/postiz.js";
 import * as pipeline from "./pipeline.js";
 
 const HELP = `
@@ -23,6 +24,7 @@ SNS 오토파일럿 — 홈페이지 녹화 → 숏츠/GIF → 블로그 분석 
   render       녹화본 → 숏츠 mp4 + GIF
   image        홍보 이미지 카드 생성
   publish      발행 (기본은 미리보기, --publish 를 붙여야 실제 발행)
+  channels     Postiz 에 연결된 채널 목록 보기
   doctor       실행 환경 점검
 
 옵션
@@ -106,6 +108,45 @@ async function doctor() {
   else log.ok("필수 항목 모두 통과");
 }
 
+/** Postiz 에 연결된 채널을 보여주고, 그대로 붙여넣을 매핑까지 만들어 줍니다. */
+async function channels() {
+  if (!postiz.configured()) {
+    log.error("POSTIZ_API_KEY 가 없습니다. Postiz 설정 > Public API 에서 키를 발급해 .env 에 넣어주세요.");
+    log.info("  (채널 연결용 CLIENT_ID / CLIENT_SECRET 과는 다른 값입니다.)");
+    process.exitCode = 1;
+    return;
+  }
+  const items = await integrations({ refresh: true });
+  if (!items.length) {
+    log.warn("연결된 채널이 없습니다. Postiz 에서 채널을 먼저 연결해주세요.");
+    process.exitCode = 1;
+    return;
+  }
+
+  log.ok(`연결된 채널 ${items.length}개`);
+  for (const item of items) {
+    const state = item.disabled ? " (사용 중지됨)" : "";
+    const profile = item.profile ? ` @${item.profile}` : "";
+    console.log(`  ${String(item.identifier ?? "?").padEnd(12)} ${item.name ?? ""}${profile}${state}`);
+    console.log(`  ${"".padEnd(12)} id: ${item.id}`);
+  }
+
+  const mapping = {};
+  for (const [platform, aliases] of Object.entries(PROVIDER_ALIASES)) {
+    const match = items.find((i) => aliases.includes(i.identifier) && !i.disabled);
+    if (match) mapping[platform] = match.id;
+  }
+
+  console.log();
+  if (Object.keys(mapping).length) {
+    console.log("자동 매칭된 채널:", Object.keys(mapping).join(", "));
+    console.log("그대로 쓰셔도 되고, 고정하고 싶으면 .env 에 아래 줄을 넣으세요:");
+    console.log(`  POSTIZ_INTEGRATIONS=${JSON.stringify(mapping)}`);
+  } else {
+    log.warn("우리가 아는 플랫폼과 매칭되는 채널이 없습니다. .env 의 POSTIZ_INTEGRATIONS 에 직접 지정해주세요.");
+  }
+}
+
 async function main() {
   loadEnv(path.join(root, ".env"));
   const [command, ...argv] = process.argv.slice(2);
@@ -113,6 +154,7 @@ async function main() {
 
   if (!command || opts.help || command === "help") { console.log(HELP); return; }
   if (command === "doctor") return doctor();
+  if (command === "channels") return channels();
 
   // capture / run 은 새 실행을 만들고, 나머지는 기본적으로 최근 실행을 이어받습니다.
   if (!["capture", "run"].includes(command) && !opts.run) opts.latest = true;

@@ -22,23 +22,58 @@
 
 ## Postiz (권장)
 
-X · 인스타그램 · 스레드 · 유튜브 · 틱톡 · 링크드인 · 레딧 등 28개 채널을 하나의 API로 처리합니다.
+X · 인스타그램 · 스레드 · 유튜브 · 틱톡 · 링크드인 · 레딧 등 여러 채널을 하나의 API로 처리합니다.
 클라우드(postiz.com)와 셀프호스팅(도커) 둘 다 됩니다.
+
+### 두 종류의 키를 헷갈리지 마세요
+
+| | 무엇 | 어디에 넣나 |
+|---|---|---|
+| **Public API 키** | Postiz 자체를 조작하는 키 (`Authorization` 헤더) | **이 도구의 `.env`** |
+| **CLIENT_ID / CLIENT_SECRET** | X·유튜브 등 각 SNS의 개발자 앱 자격증명. Postiz가 채널을 연결할 때 씁니다 | **셀프호스팅 Postiz 서버**의 환경변수 (`YOUTUBE_CLIENT_ID`, `FACEBOOK_APP_ID` 등) |
+
+클라우드 Postiz를 쓰면 CLIENT_ID/SECRET은 아예 필요 없습니다 — 화면에서 채널을 연결하면 끝입니다.
+
+### 설정
 
 1. Postiz에서 채널들을 연결합니다.
 2. **Settings → Public API** 에서 API 키를 발급합니다.
-3. 각 채널의 integration id 를 확인해 매핑을 만듭니다.
 
 ```bash
 POSTIZ_API_URL=https://api.postiz.com     # 셀프호스팅이면 그 주소
 POSTIZ_API_KEY=여기에_키
-POSTIZ_INTEGRATIONS={"instagram":"<id>","x":"<id>","youtube":"<id>","threads":"<id>"}
 ```
+
+3. 연결된 채널을 확인합니다.
+
+```bash
+python -m sns_autopilot channels
+```
+
+```
+✓ 연결된 채널 3개
+  x            마이리얼트립 @myrealtrip
+               id: cm4ean69r0003w8w1cdomox9n
+  instagram    myrealtrip @myrealtrip_official
+               id: cm4instagram0001
+  youtube      마이리얼트립 TV
+               id: cm4youtube0001
+
+자동 매칭된 채널: x, instagram, youtube
+```
+
+**매핑은 안 넣어도 됩니다.** 채널 목록의 `identifier` 로 자동으로 찾습니다.
+채널이 여러 개라 고정하고 싶을 때만 위 명령이 만들어주는 `POSTIZ_INTEGRATIONS=...` 줄을 `.env` 에 넣으세요.
 
 `config/pipeline.yaml` 의 `publish.scheduleAt` 에 ISO 시각을 넣으면 예약 발행됩니다.
 
-> Postiz의 Public API 응답 형식이 버전에 따라 달라질 수 있습니다. 처음 한 번은 `--publish` 없이 돌려 미리보기로 확인한 뒤,
-> 실제 발행 시 오류가 나면 `sns_autopilot/publish/adapters/postiz.py` 의 요청 본문만 맞춰주면 됩니다.
+### 알아둘 것
+
+- **시간당 30요청 제한**입니다. 발행 1건당 미디어 업로드 포함 2요청이 나가므로, 한 번에 올릴 수 있는 건 대략 14건입니다.
+- 요청 본문의 `settings.__type` 에는 채널의 provider 이름(`instagram`, `x`, `youtube` …)이 들어가야 합니다.
+  이 값은 채널 목록에서 받은 `identifier` 를 그대로 씁니다. 빠지면 일부 채널에서 400 이 납니다.
+- UI의 "채널"이 API에서는 "integration" 입니다.
+- 첨부 파일은 먼저 `/public/v1/upload` 로 올린 뒤, 받은 `{id, path}` 를 본문의 `image` 배열에 넣습니다.
 
 ---
 

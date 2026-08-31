@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
 
@@ -24,6 +25,7 @@ COMMANDS = {
     "render": "녹화본 → 숏츠 mp4 + GIF",
     "image": "홍보 이미지 카드 생성",
     "publish": "발행 (기본은 미리보기, --publish 를 붙여야 실제 발행)",
+    "channels": "Postiz 에 연결된 채널 목록 보기",
     "doctor": "실행 환경 점검",
 }
 
@@ -118,6 +120,50 @@ def doctor() -> int:
     return 0
 
 
+def channels() -> int:
+    """Postiz 에 연결된 채널을 보여주고, 그대로 붙여넣을 매핑까지 만들어 줍니다."""
+    from .publish.adapters.postiz import PROVIDER_ALIASES, PostizAdapter
+
+    adapter = PostizAdapter()
+    if not adapter.configured():
+        log.error("POSTIZ_API_KEY 가 없습니다. Postiz 설정 > Public API 에서 키를 발급해 .env 에 넣어주세요.")
+        log.info("  (채널 연결용 CLIENT_ID / CLIENT_SECRET 과는 다른 값입니다.)")
+        return 1
+
+    try:
+        items = adapter.integrations(refresh=True)
+    except Exception as exc:  # noqa: BLE001 - 네트워크·키 문제를 그대로 보여줍니다
+        log.error(str(exc))
+        return 1
+
+    if not items:
+        log.warn("연결된 채널이 없습니다. Postiz 에서 채널을 먼저 연결해주세요.")
+        return 1
+
+    log.ok(f"연결된 채널 {len(items)}개")
+    for item in items:
+        state = " (사용 중지됨)" if item.get("disabled") else ""
+        profile = f" @{item['profile']}" if item.get("profile") else ""
+        print(f"  {item.get('identifier','?'):<12} {item.get('name','')}{profile}{state}")
+        print(f"  {'':<12} id: {item.get('id')}")
+
+    # 우리 플랫폼 키로 자동 매칭되는 것만 골라 붙여넣기용 줄을 만듭니다.
+    mapping = {}
+    for platform, aliases in PROVIDER_ALIASES.items():
+        match = next((i for i in items if i.get("identifier") in aliases and not i.get("disabled")), None)
+        if match:
+            mapping[platform] = match["id"]
+
+    print()
+    if mapping:
+        print("자동 매칭된 채널:", ", ".join(mapping))
+        print("그대로 쓰셔도 되고, 고정하고 싶으면 .env 에 아래 줄을 넣으세요:")
+        print(f"  POSTIZ_INTEGRATIONS={json.dumps(mapping, ensure_ascii=False)}")
+    else:
+        log.warn("우리가 아는 플랫폼과 매칭되는 채널이 없습니다. .env 의 POSTIZ_INTEGRATIONS 에 직접 지정해주세요.")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     load_env(ROOT / ".env")
     args = build_parser().parse_args(argv)
@@ -125,6 +171,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "doctor":
         return doctor()
+    if args.command == "channels":
+        return channels()
 
     # capture / run 은 새 실행을 만들고, 나머지는 기본적으로 최근 실행을 이어받습니다.
     if args.command not in ("capture", "run") and not args.run:
