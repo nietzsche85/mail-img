@@ -12,6 +12,13 @@ export function composeText(post, { withHashtags = true, limit = 0 } = {}) {
   return text;
 }
 
+/** 큐 파일 머리말에 쓸 사람이 읽는 채널 이름 */
+export const LABELS = {
+  instagram: "인스타그램", threads: "스레드", x: "X(트위터)",
+  youtube: "유튜브 쇼츠", tiktok: "틱톡", naver_blog: "네이버 블로그",
+  linkedin: "링크드인", facebook: "페이스북",
+};
+
 export const LIMITS = {
   x: 280,
   threads: 500,

@@ -4,6 +4,13 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+#: 큐 파일 머리말에 쓸 사람이 읽는 채널 이름
+LABELS: dict[str, str] = {
+    "instagram": "인스타그램", "threads": "스레드", "x": "X(트위터)",
+    "youtube": "유튜브 쇼츠", "tiktok": "틱톡", "naver_blog": "네이버 블로그",
+    "linkedin": "링크드인", "facebook": "페이스북",
+}
+
 LIMITS: dict[str, int] = {
     "x": 280,
     "threads": 500,
