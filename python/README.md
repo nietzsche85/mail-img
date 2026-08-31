@@ -61,6 +61,17 @@ Chromium 은 wheel 에 들어 있지 않아 `playwright install chromium` 이 �
 > ffmpeg 는 `imageio-ffmpeg` 가 받아둔 정적 바이너리를 씁니다. 따로 설치할 필요가 없습니다.
 > 시스템 ffmpeg 를 쓰고 싶으면 `FFMPEG_PATH` 환경변수로 지정하세요.
 
+### 새 버전으로 업데이트
+
+압축본을 **기존 폴더에 그대로 덮어쓰면** 됩니다. 압축본에는 `.env` 와 `.venv` 가 들어 있지 않아
+설정과 가상환경은 그대로 유지됩니다.
+
+```bash
+python -m sns_autopilot --version    # 지금 버전 확인
+```
+
+명령이 없다는 오류(`invalid choice`)가 나면 폴더가 옛 버전입니다.
+
 ## 2. 5분 만에 돌려보기
 
 포함된 데모 사이트로 전체 흐름을 확인합니다. **인터넷 연결도, SNS 계정도 필요 없습니다.**

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import fs from "node:fs";
 import path from "node:path";
+import { createRequire } from "node:module";
 import { log } from "./lib/log.js";
 import { loadEnv } from "./lib/config.js";
 import { root } from "./lib/paths.js";
@@ -9,6 +10,8 @@ import { koreanFontFace } from "./render/html2png.js";
 import { ADAPTERS } from "./publish/index.js";
 import { integrations, PROVIDER_ALIASES, postiz } from "./publish/adapters/postiz.js";
 import * as pipeline from "./pipeline.js";
+
+const VERSION = createRequire(import.meta.url)("../package.json").version;
 
 const HELP = `
 SNS 오토파일럿 — 홈페이지 녹화 → 숏츠/GIF → 블로그 분석 → 카피·이미지 → 자동 발행
@@ -38,6 +41,7 @@ SNS 오토파일럿 — 홈페이지 녹화 → 숏츠/GIF → 블로그 분석 
   --target <이름>    발행 대상 지정 (여러 번 사용 가능)
   --publish          실제로 발행합니다 (없으면 미리보기만)
   --headed           브라우저 창을 띄워서 녹화 (디버깅용)
+  --version          버전 표시
 
 예시
   node src/cli.js doctor
@@ -66,6 +70,7 @@ function parseArgs(argv) {
       case "--skip-capture": opts.skipCapture = true; break;
       case "--skip-analyze": opts.skipAnalyze = true; break;
       case "-h": case "--help": opts.help = true; break;
+      case "--version": opts.version = true; break;
       default: rest.push(a);
     }
   }
@@ -73,6 +78,7 @@ function parseArgs(argv) {
 }
 
 async function doctor() {
+  log.info(`sns-autopilot ${VERSION}`);
   const checks = [];
   const push = (ok, label, hint = "") => checks.push({ ok, label, hint });
 
@@ -149,7 +155,11 @@ async function channels() {
 
 async function main() {
   loadEnv(path.join(root, ".env"));
-  const [command, ...argv] = process.argv.slice(2);
+  const args = process.argv.slice(2);
+  // --version 은 명령 자리에 와도 받아줍니다 (첫 인자를 명령으로 읽기 때문).
+  if (args.includes("--version")) { console.log(`sns-autopilot ${VERSION}`); return; }
+
+  const [command, ...argv] = args;
   const { opts } = parseArgs(argv);
 
   if (!command || opts.help || command === "help") { console.log(HELP); return; }

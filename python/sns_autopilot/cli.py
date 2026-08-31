@@ -6,7 +6,7 @@ import json
 import os
 import sys
 
-from . import log, pipeline
+from . import __version__, log, pipeline
 from .config import load_env
 from .paths import ROOT
 
@@ -39,6 +39,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("command", choices=list(COMMANDS),
                         help="\n".join(f"{k}: {v}" for k, v in COMMANDS.items()))
+    parser.add_argument("--version", action="version", version=f"sns-autopilot {__version__}")
     parser.add_argument("--config", help="설정 파일 (기본 config/pipeline.yaml)")
     parser.add_argument("--flow", help="녹화 시나리오 yaml")
     parser.add_argument("--url", help="분석할 블로그 글 주소 / capture 시 시작 주소")
@@ -62,6 +63,7 @@ def _real_key() -> bool:
 
 
 def doctor() -> int:
+    log.info(f"sns-autopilot {__version__}")
     checks: list[tuple[bool, str, str, bool]] = []   # (통과, 라벨, 힌트, 참고용여부)
 
     checks.append((sys.version_info >= (3, 10), f"Python {sys.version.split()[0]}",
