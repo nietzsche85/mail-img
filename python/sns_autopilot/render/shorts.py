@@ -61,10 +61,9 @@ def render_shorts(
     outro_png = paths.render / "outro.png"
     jobs = [
         RenderJob(intro_html(hook, sub, brand, width, height), width, height, intro_png),
-        RenderJob(
-            outro_html(cta or brand.get("cta") or "프로필 링크 확인하기", brand, width, height),
-            width, height, outro_png,
-        ),
+        # 비워두면 그 줄이 안 나오도록, 여기서 기본 문구를 끼워넣지 않습니다.
+        RenderJob(outro_html(cta or brand.get("cta") or "", brand, width, height),
+                  width, height, outro_png),
     ]
     jobs += [
         RenderJob(caption_html(c["text"], width, height, brand), width, height, c["file"], transparent=True)

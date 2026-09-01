@@ -48,17 +48,27 @@ export function introHtml({ hook, sub, brand, width, height }) {
   <div class="bar"></div>`;
 }
 
-/** 마지막 CTA 카드. */
+/**
+ * 마지막 CTA 카드.
+ * 두 줄 다 비우면 그 줄은 아예 안 나옵니다.
+ * - 큰 문구: 설정의 brand.cta (또는 카피가 만든 cta)
+ * - 아래 작은 줄: 설정의 brand.signature. 기본은 비어 있어 아무것도 안 나옵니다.
+ */
 export function outroHtml({ cta, brand, width, height }) {
   const c = palette(brand);
+  const signature = brand?.signature ?? "";
+  const ctaBlock = cta
+    ? `<div class="cta">${emphasize(cta, c.highlight)}</div>\n  <div class="arrow">↓</div>`
+    : "";
+  const signatureBlock = signature ? `<div class="name">${esc(signature)}</div>` : "";
+
   return `<!doctype html><meta charset="utf-8"><style>${BASE_CSS}
   body{background:linear-gradient(200deg,#04122f 0%,${c.bg} 100%);color:${c.text};
     display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 80px;text-align:center}
   .cta{font-size:${Math.round(width * 0.078)}px;font-weight:900;letter-spacing:-.03em;line-height:1.25}
-  .arrow{margin-top:44px;font-size:${Math.round(width * 0.1)}px;color:${c.accent};animation:none}
+  .arrow{margin-top:44px;font-size:${Math.round(width * 0.1)}px;color:${c.accent}}
   .name{margin-top:56px;font-size:${Math.round(width * 0.036)}px;font-weight:700;opacity:.75;letter-spacing:.08em}
   </style>
-  <div class="cta">${emphasize(cta, c.highlight)}</div>
-  <div class="arrow">↓</div>
-  <div class="name">${esc(brand?.name ?? "")}</div>`;
+  ${ctaBlock}
+  ${signatureBlock}`;
 }

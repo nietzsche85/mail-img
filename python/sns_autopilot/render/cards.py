@@ -69,8 +69,20 @@ def intro_html(hook: str, sub: str, brand: dict, width: int, height: int) -> str
 
 
 def outro_html(cta: str, brand: dict, width: int, height: int) -> str:
-    """마지막 CTA 카드."""
+    """마지막 CTA 카드.
+
+    두 줄 다 비우면 그 줄은 아예 안 나옵니다.
+    - 큰 문구: 설정의 brand.cta (또는 카피가 만든 cta)
+    - 아래 작은 줄: 설정의 brand.signature. 기본은 비어 있어 아무것도 안 나옵니다.
+    """
     c = palette(brand)
+    signature = (brand or {}).get("signature") or ""
+    cta_block = (
+        f'<div class="cta">{_emphasize(cta, c["highlight"])}</div>\n  <div class="arrow">↓</div>'
+        if cta else ""
+    )
+    signature_block = f'<div class="name">{_esc(signature)}</div>' if signature else ""
+
     return f"""<!doctype html><meta charset="utf-8"><style>{base_css()}
   body{{background:linear-gradient(200deg,#04122f 0%,{c['bg']} 100%);color:{c['text']};
     display:flex;flex-direction:column;align-items:center;justify-content:center;
@@ -79,6 +91,5 @@ def outro_html(cta: str, brand: dict, width: int, height: int) -> str:
   .arrow{{margin-top:44px;font-size:{round(width * 0.1)}px;color:{c['accent']}}}
   .name{{margin-top:56px;font-size:{round(width * 0.036)}px;font-weight:700;opacity:.75;letter-spacing:.08em}}
   </style>
-  <div class="cta">{_emphasize(cta, c['highlight'])}</div>
-  <div class="arrow">↓</div>
-  <div class="name">{_esc((brand or {}).get('name'))}</div>"""
+  {cta_block}
+  {signature_block}"""

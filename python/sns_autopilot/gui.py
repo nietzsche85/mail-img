@@ -63,20 +63,28 @@ class App:
         ttk.Label(form, text="비워두면 문구 없이 화면만 담습니다. **강조** 를 쓰면 포인트 색으로 나옵니다.",
                   foreground="#666").grid(row=2, column=1, columnspan=3, sticky=W, padx=(8, 0))
 
-        ttk.Label(form, text="화면 크기").grid(row=3, column=0, sticky=W, pady=(10, 4))
+        ttk.Label(form, text="마지막 화면 문구").grid(row=3, column=0, sticky=W, pady=4)
+        self.outro = StringVar()
+        ttk.Entry(form, textvariable=self.outro).grid(
+            row=3, column=1, columnspan=3, sticky="ew", padx=(8, 0), pady=4
+        )
+        ttk.Label(form, text="비워두면 설정의 brand.cta 를 쓰고, 그것도 비어 있으면 마지막 화면에 문구가 안 나옵니다.",
+                  foreground="#666").grid(row=4, column=1, columnspan=3, sticky=W, padx=(8, 0))
+
+        ttk.Label(form, text="화면 크기").grid(row=5, column=0, sticky=W, pady=(10, 4))
         self.viewport = StringVar(value=list(VIEWPORTS)[0])
         ttk.Combobox(form, textvariable=self.viewport, values=list(VIEWPORTS),
-                     state="readonly", width=18).grid(row=3, column=1, sticky=W, padx=(8, 0), pady=(10, 4))
+                     state="readonly", width=18).grid(row=5, column=1, sticky=W, padx=(8, 0), pady=(10, 4))
 
-        ttk.Label(form, text="스크롤 시간").grid(row=3, column=2, sticky=W, padx=(16, 0), pady=(10, 4))
+        ttk.Label(form, text="스크롤 시간").grid(row=5, column=2, sticky=W, padx=(16, 0), pady=(10, 4))
         self.scroll = StringVar(value="6")
         ttk.Spinbox(form, from_=1, to=30, width=5, textvariable=self.scroll).grid(
-            row=3, column=3, sticky=W, padx=(8, 0), pady=(10, 4)
+            row=5, column=3, sticky=W, padx=(8, 0), pady=(10, 4)
         )
 
         self.headed = BooleanVar(value=False)
         ttk.Checkbutton(form, text="브라우저 창을 띄워서 진행 보기", variable=self.headed).grid(
-            row=4, column=1, columnspan=3, sticky=W, padx=(8, 0), pady=(6, 0)
+            row=6, column=1, columnspan=3, sticky=W, padx=(8, 0), pady=(6, 0)
         )
 
         # ── 버튼 ────────────────────────────────────────────
@@ -194,6 +202,7 @@ class App:
         params = {
             "url": url,
             "caption": self.caption.get().strip(),
+            "outro": self.outro.get().strip(),
             "viewport": VIEWPORTS[self.viewport.get()],
             "scroll_seconds": float(self.scroll.get() or 6),
             "headed": self.headed.get(),
@@ -243,6 +252,7 @@ class App:
         params = {
             "url": url,
             "caption": self.caption.get().strip(),
+            "outro": self.outro.get().strip(),
             "viewport": VIEWPORTS[self.viewport.get()],
         }
         threading.Thread(target=self.manual_worker, args=(params,), daemon=True).start()

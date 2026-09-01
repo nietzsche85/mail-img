@@ -123,7 +123,8 @@ def step_render(ctx: Context, options: dict | None = None) -> dict:
         # GUI 에서 문구를 직접 넣었으면 그것을 첫 화면 훅으로 씁니다.
         hook=options.get("caption") or copy.get("hook") or ctx.config["brand"]["name"],
         sub=copy.get("hookSub", ""),
-        cta=copy.get("cta") or ctx.config["brand"].get("cta", ""),
+        # GUI 에서 마지막 화면 문구를 직접 넣었으면 그것을 씁니다.
+        cta=options.get("outro") or copy.get("cta") or ctx.config["brand"].get("cta", ""),
     )
     ctx.save(media={**(manifest.get("media") or {}), **media})
     return media

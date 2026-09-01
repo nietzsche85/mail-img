@@ -46,7 +46,8 @@ export async function renderShorts({ video, timeline, brand, render, paths, hook
 
   await renderAll([
     { html: introHtml({ hook, sub, brand, width: W, height: H }), width: W, height: H, out: introPng },
-    { html: outroHtml({ cta: cta || brand.cta || "프로필 링크 확인하기", brand, width: W, height: H }), width: W, height: H, out: outroPng },
+    // 비워두면 그 줄이 안 나오도록, 여기서 기본 문구를 끼워넣지 않습니다.
+    { html: outroHtml({ cta: cta || brand.cta || "", brand, width: W, height: H }), width: W, height: H, out: outroPng },
     ...captions.map((c) => ({
       html: captionHtml(c.text, { width: W, height: H, brand }),
       width: W, height: H, out: c.file, transparent: true,
