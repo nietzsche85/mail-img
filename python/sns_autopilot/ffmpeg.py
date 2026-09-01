@@ -12,6 +12,7 @@ from . import log
 
 _TIME = re.compile(r"time=(\d+):(\d+):(\d+\.\d+)")
 _DURATION = re.compile(r"Duration:\s*(\d+):(\d+):(\d+\.\d+)")
+_SIZE = re.compile(r"Video:.*?[ ,](\d{2,5})x(\d{2,5})[ ,]")
 
 
 @lru_cache(maxsize=1)
@@ -56,3 +57,13 @@ def duration(file: Path | str) -> float:
             hours, minutes, seconds = matches[-1] if pattern is _TIME else matches[0]
             return int(hours) * 3600 + int(minutes) * 60 + float(seconds)
     return 0.0
+
+
+def dimensions(file: Path | str) -> tuple[int, int]:
+    """영상·이미지의 가로세로를 잽니다. 못 읽으면 (0, 0)."""
+    try:
+        stderr = run(["-i", str(file), "-f", "null", "-"], quiet=False)
+    except RuntimeError:
+        return (0, 0)
+    found = _SIZE.search(stderr)
+    return (int(found.group(1)), int(found.group(2))) if found else (0, 0)

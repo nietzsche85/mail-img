@@ -10,6 +10,35 @@ const q = (n) => Number(n.toFixed(3));
 /** 앞뒤 카드에 쓸 수 있는 이미지 형식 */
 const IMAGE_SUFFIXES = new Set([".png", ".jpg", ".jpeg", ".webp", ".bmp"]);
 
+/** 채우기로 잘라냈을 때 이만큼도 안 남으면 잘라내지 않고 여백을 둡니다. */
+const FILL_COVERAGE_LIMIT = 0.9;
+
+/** 짧은 쪽을 맞춰 꽉 채우고 넘치는 부분은 잘라냅니다. */
+const fillTo = (W, H) => `scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H}`;
+
+/**
+ * 화면 전체를 넣고 남는 자리는 같은 화면을 흐리게 깔아 채웁니다.
+ * 가로가 긴 화면을 세로 영상에 담을 때 잘라내면 내용이 대부분 날아갑니다.
+ */
+function containChain(labelIn, labelOut, W, H) {
+  return [
+    `[${labelIn}]split=2[${labelOut}_fg][${labelOut}_bgsrc]`,
+    `[${labelOut}_bgsrc]${fillTo(W, H)},gblur=sigma=28,eq=brightness=-0.18[${labelOut}_bg]`,
+    `[${labelOut}_fg]scale=${W}:${H}:force_original_aspect_ratio=decrease[${labelOut}_fit]`,
+    `[${labelOut}_bg][${labelOut}_fit]overlay=(W-w)/2:(H-h)/2[${labelOut}]`,
+  ];
+}
+
+/** auto 일 때, 잘라내면 너무 많이 날아가는지 보고 정합니다. */
+function shouldContain(mode, sw, sh, W, H) {
+  if (mode === "fill") return false;
+  if (mode === "contain") return true;
+  if (!sw || !sh) return false;
+  const source = sw / sh;
+  const target = W / H;
+  return Math.min(source / target, target / source) < FILL_COVERAGE_LIMIT;
+}
+
 /** 설정에서 온 앞/뒤 카드 값을 다루기 쉬운 모양으로 정리합니다. */
 function cardSpec(spec) {
   return {
@@ -59,9 +88,17 @@ function prepareCard(spec, kind, brand, W, H, outPng, jobs) {
  */
 export async function renderShorts({ video, timeline, brand, render, paths, intro, outro }) {
   const { width: W, height: H, fps: FPS, maxDuration, bgm } = render.shorts;
+  const fitMode = String(render.shorts.fit ?? "auto").toLowerCase();
   const outMp4 = path.join(paths.render, "shorts.mp4");
   const outGif = path.join(paths.render, "preview.gif");
   const outCover = path.join(paths.render, "cover.png");
+
+  // 녹화 화면이 세로 규격과 많이 다르면 잘라내지 않고 여백을 둡니다.
+  const [sourceWidth, sourceHeight] = await ff.dimensions(video);
+  const bodyContain = shouldContain(fitMode, sourceWidth, sourceHeight, W, H);
+  if (bodyContain && fitMode === "auto") {
+    log.info(`녹화 화면 ${sourceWidth}x${sourceHeight} 이 세로 규격과 달라 잘라내지 않고 흐린 여백을 둡니다 (설정 render.shorts.fit).`);
+  }
 
   const rawDuration = (await ff.duration(video)) || timeline.duration || 10;
   let factor = 1;
@@ -129,10 +166,16 @@ export async function renderShorts({ video, timeline, brand, render, paths, intr
   else inputs.push("-f", "lavfi", "-t", String(q(total)), "-i", "anullsrc=channel_layout=stereo:sample_rate=44100");
 
   const chain = [];
-  chain.push(
-    `[0:v]trim=0:${q(rawLimit)},setpts=(PTS-STARTPTS)/${q(factor)},` +
-    `scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H},fps=${FPS},format=rgba[b0]`
-  );
+  if (bodyContain) {
+    chain.push(`[0:v]trim=0:${q(rawLimit)},setpts=(PTS-STARTPTS)/${q(factor)},fps=${FPS}[body_src]`);
+    chain.push(...containChain("body_src", "body_fit", W, H));
+    chain.push("[body_fit]format=rgba[b0]");
+  } else {
+    chain.push(
+      `[0:v]trim=0:${q(rawLimit)},setpts=(PTS-STARTPTS)/${q(factor)},` +
+      `${fillTo(W, H)},fps=${FPS},format=rgba[b0]`
+    );
+  }
   let last = "b0";
   captions.forEach((c, i) => {
     const next = `b${i + 1}`;
@@ -140,17 +183,27 @@ export async function renderShorts({ video, timeline, brand, render, paths, intr
     last = next;
   });
 
-  // 직접 넣은 이미지는 비율이 제각각이라, 늘리지 말고 채운 뒤 잘라냅니다.
-  const fit = `scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H}`;
+  // 직접 넣은 이미지는 비율이 제각각입니다. fill 로 못박지 않은 이상,
+  // 디자인이 잘리지 않게 전체를 넣고 남는 자리는 흐린 배경으로 채웁니다.
+  const cardFill = fitMode === "fill";
+  const cardChain = (index, name, fade) => {
+    if (cardFill) {
+      chain.push(`[${index}:v]${fillTo(W, H)},fps=${FPS},format=rgba,${fade}[${name}]`);
+      return;
+    }
+    chain.push(`[${index}:v]fps=${FPS}[${name}_src]`);
+    chain.push(...containChain(`${name}_src`, `${name}_fit`, W, H));
+    chain.push(`[${name}_fit]format=rgba,${fade}[${name}]`);
+  };
 
   const segments = [];
   if (introCard) {
-    chain.push(`[${introIndex}:v]${fit},fps=${FPS},format=rgba,fade=t=out:st=${q(Math.max(0, introSeconds - 0.3))}:d=0.3[intro]`);
+    cardChain(introIndex, "intro", `fade=t=out:st=${q(Math.max(0, introSeconds - 0.3))}:d=0.3`);
     segments.push("[intro]");
   }
   segments.push(`[${last}]`);
   if (outroCard) {
-    chain.push(`[${outroIndex}:v]${fit},fps=${FPS},format=rgba,fade=t=in:st=0:d=0.3[outro]`);
+    cardChain(outroIndex, "outro", "fade=t=in:st=0:d=0.3");
     segments.push("[outro]");
   }
 

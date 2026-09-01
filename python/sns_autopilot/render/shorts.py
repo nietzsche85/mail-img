@@ -12,6 +12,45 @@ from .html2png import RenderJob, render_all
 #: 앞뒤 카드에 쓸 수 있는 이미지 형식
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
 
+#: 채우기로 잘라냈을 때 이만큼도 안 남으면 잘라내지 않고 여백을 둡니다.
+FILL_COVERAGE_LIMIT = 0.9
+
+
+def _fill(width: int, height: int) -> str:
+    """짧은 쪽을 맞춰 꽉 채우고 넘치는 부분은 잘라냅니다."""
+    return (f"scale={width}:{height}:force_original_aspect_ratio=increase,"
+            f"crop={width}:{height}")
+
+
+def _contain(label_in: str, label_out: str, width: int, height: int) -> list[str]:
+    """화면 전체를 넣고 남는 자리는 같은 화면을 흐리게 깔아 채웁니다.
+
+    가로가 긴 화면(데스크톱 등)을 세로 영상에 담을 때 잘라내면 내용이 대부분
+    날아갑니다. 검은 띠 대신 흐린 배경을 깔면 덜 허전합니다.
+    """
+    return [
+        f"[{label_in}]split=2[{label_out}_fg][{label_out}_bgsrc]",
+        f"[{label_out}_bgsrc]{_fill(width, height)},gblur=sigma=28,"
+        f"eq=brightness=-0.18[{label_out}_bg]",
+        f"[{label_out}_fg]scale={width}:{height}:force_original_aspect_ratio=decrease[{label_out}_fit]",
+        f"[{label_out}_bg][{label_out}_fit]overlay=(W-w)/2:(H-h)/2[{label_out}]",
+    ]
+
+
+def _should_contain(mode: str, source_width: int, source_height: int,
+                    width: int, height: int) -> bool:
+    """auto 일 때, 잘라내면 너무 많이 날아가는지 보고 정합니다."""
+    if mode == "fill":
+        return False
+    if mode == "contain":
+        return True
+    if not source_width or not source_height:
+        return False
+    source_ratio = source_width / source_height
+    target_ratio = width / height
+    coverage = min(source_ratio / target_ratio, target_ratio / source_ratio)
+    return coverage < FILL_COVERAGE_LIMIT
+
 
 def _card_spec(spec: dict | None) -> dict:
     """설정에서 온 앞/뒤 카드 값을 다루기 쉬운 모양으로 정리합니다."""
@@ -73,6 +112,14 @@ def render_shorts(
     out_mp4 = paths.render / "shorts.mp4"
     out_gif = paths.render / "preview.gif"
     out_cover = paths.render / "cover.png"
+
+    # 녹화 화면이 세로 규격과 많이 다르면 잘라내지 않고 여백을 둡니다.
+    fit_mode = (shorts.get("fit") or "auto").lower()
+    source_width, source_height = ffmpeg.dimensions(video)
+    body_contain = _should_contain(fit_mode, source_width, source_height, width, height)
+    if body_contain and fit_mode == "auto":
+        log.info(f"녹화 화면 {source_width}x{source_height} 이 세로 규격과 달라 "
+                 "잘라내지 않고 흐린 여백을 둡니다 (설정 render.shorts.fit).")
 
     raw_duration = ffmpeg.duration(video) or timeline.get("duration") or 10.0
     if shorts["speed"] == "auto":
@@ -149,11 +196,16 @@ def render_shorts(
     else:
         inputs += ["-f", "lavfi", "-t", f"{total:.3f}", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100"]
 
-    chain = [
-        f"[0:v]trim=0:{raw_limit:.3f},setpts=(PTS-STARTPTS)/{factor:.3f},"
-        f"scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height},"
-        f"fps={fps},format=rgba[b0]"
-    ]
+    chain = []
+    if body_contain:
+        chain.append(f"[0:v]trim=0:{raw_limit:.3f},setpts=(PTS-STARTPTS)/{factor:.3f},fps={fps}[body_src]")
+        chain += _contain("body_src", "body_fit", width, height)
+        chain.append("[body_fit]format=rgba[b0]")
+    else:
+        chain.append(
+            f"[0:v]trim=0:{raw_limit:.3f},setpts=(PTS-STARTPTS)/{factor:.3f},"
+            f"{_fill(width, height)},fps={fps},format=rgba[b0]"
+        )
     last = "b0"
     for index, caption in enumerate(captions):
         nxt = f"b{index + 1}"
@@ -163,17 +215,26 @@ def render_shorts(
         )
         last = nxt
 
-    # 직접 넣은 이미지는 비율이 제각각이라, 늘리지 말고 채운 뒤 잘라냅니다.
-    fit = f"scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height}"
+    # 직접 넣은 이미지는 비율이 제각각입니다. fill 로 못박지 않은 이상,
+    # 디자인이 잘리지 않게 전체를 넣고 남는 자리는 흐린 배경으로 채웁니다.
+    card_fill = fit_mode == "fill"
+
+    def card_chain(index: int, name: str, fade: str) -> None:
+        if card_fill:
+            chain.append(f"[{index}:v]{_fill(width, height)},fps={fps},format=rgba,{fade}[{name}]")
+            return
+        chain.append(f"[{index}:v]fps={fps}[{name}_src]")
+        chain.extend(_contain(f"{name}_src", f"{name}_fit", width, height))
+        chain.append(f"[{name}_fit]format=rgba,{fade}[{name}]")
 
     segments = []
     if intro_card:
-        chain.append(f"[{intro_index}:v]{fit},fps={fps},format=rgba,"
-                     f"fade=t=out:st={max(0.0, intro_seconds - 0.3):.3f}:d=0.3[intro]")
+        card_chain(intro_index, "intro",
+                   f"fade=t=out:st={max(0.0, intro_seconds - 0.3):.3f}:d=0.3")
         segments.append("[intro]")
     segments.append(f"[{last}]")
     if outro_card:
-        chain.append(f"[{outro_index}:v]{fit},fps={fps},format=rgba,fade=t=in:st=0:d=0.3[outro]")
+        card_chain(outro_index, "outro", "fade=t=in:st=0:d=0.3")
         segments.append("[outro]")
 
     if len(segments) > 1:

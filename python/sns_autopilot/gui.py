@@ -74,9 +74,13 @@ class App:
             row=3, column=3, sticky=W, padx=(8, 0), pady=(10, 4)
         )
 
+        ttk.Label(form, text="브라우저 창 크기입니다. 결과물은 항상 1080×1920 세로예요. "
+                             "가로가 긴 화면은 잘리지 않게 위아래 여백이 생깁니다.",
+                  foreground="#666").grid(row=4, column=1, columnspan=3, sticky=W, padx=(8, 0))
+
         self.headed = BooleanVar(value=False)
         ttk.Checkbutton(form, text="브라우저 창을 띄워서 진행 보기", variable=self.headed).grid(
-            row=4, column=1, columnspan=3, sticky=W, padx=(8, 0), pady=(6, 0)
+            row=5, column=1, columnspan=3, sticky=W, padx=(8, 0), pady=(6, 0)
         )
 
         # ── 앞뒤 카드 ───────────────────────────────────────

@@ -50,3 +50,12 @@ export async function duration(file) {
   const [, h, m, s] = progress[progress.length - 1];
   return Number(h) * 3600 + Number(m) * 60 + Number(s);
 }
+
+/** 영상·이미지의 가로세로를 잽니다. 못 읽으면 [0, 0]. */
+export async function dimensions(file) {
+  const stderr = String(
+    await run(["-i", file, "-f", "null", "-"], { quiet: false }).catch((e) => String(e))
+  );
+  const found = /Video:.*?[ ,](\d{2,5})x(\d{2,5})[ ,]/.exec(stderr);
+  return found ? [Number(found[1]), Number(found[2])] : [0, 0];
+}
