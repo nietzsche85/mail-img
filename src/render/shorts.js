@@ -41,26 +41,49 @@ export async function renderShorts({ video, timeline, brand, render, paths, hook
     }))
     .filter((c) => c.end - c.start > 0.25);
 
+  // 인트로·아웃트로는 초를 0 으로 두면 카드 자체가 빠집니다.
+  const hasIntro = introSeconds > 0;
+  const hasOutro = outroSeconds > 0;
   const introPng = path.join(paths.render, "intro.png");
   const outroPng = path.join(paths.render, "outro.png");
 
-  await renderAll([
-    { html: introHtml({ hook, sub, brand, width: W, height: H }), width: W, height: H, out: introPng },
-    // 비워두면 그 줄이 안 나오도록, 여기서 기본 문구를 끼워넣지 않습니다.
-    { html: outroHtml({ cta: cta || brand.cta || "", brand, width: W, height: H }), width: W, height: H, out: outroPng },
-    ...captions.map((c) => ({
-      html: captionHtml(c.text, { width: W, height: H, brand }),
-      width: W, height: H, out: c.file, transparent: true,
-    })),
-  ]);
-  fs.copyFileSync(introPng, outCover);
+  const jobs = [];
+  if (hasIntro) jobs.push({ html: introHtml({ hook, sub, brand, width: W, height: H }), width: W, height: H, out: introPng });
+  // 비워두면 그 줄이 안 나오도록, 여기서 기본 문구를 끼워넣지 않습니다.
+  if (hasOutro) jobs.push({ html: outroHtml({ cta: cta || brand.cta || "", brand, width: W, height: H }), width: W, height: H, out: outroPng });
+  jobs.push(...captions.map((c) => ({
+    html: captionHtml(c.text, { width: W, height: H, brand }),
+    width: W, height: H, out: c.file, transparent: true,
+  })));
+  await renderAll(jobs);
+
+  // 껐는데 예전 실행의 카드가 남아 있으면 헷갈립니다.
+  if (!hasIntro) fs.rmSync(introPng, { force: true });
+  if (!hasOutro) fs.rmSync(outroPng, { force: true });
 
   // ── 2) ffmpeg 그래프 조립 ─────────────────────────────────
-  const inputs = ["-i", video, "-loop", "1", "-t", String(introSeconds), "-i", introPng, "-loop", "1", "-t", String(outroSeconds), "-i", outroPng];
-  captions.forEach((c) => inputs.push("-i", c.file));
-  const audioIndex = 3 + captions.length;
+  // 카드를 빼면 입력 번호가 밀리므로 번호를 만들면서 기억해 둡니다.
+  const inputs = ["-i", video];
+  let nextIndex = 1;
+
+  let introIndex = null;
+  if (hasIntro) {
+    inputs.push("-loop", "1", "-t", String(q(introSeconds)), "-i", introPng);
+    introIndex = nextIndex++;
+  }
+  let outroIndex = null;
+  if (hasOutro) {
+    inputs.push("-loop", "1", "-t", String(q(outroSeconds)), "-i", outroPng);
+    outroIndex = nextIndex++;
+  }
+
+  const captionBase = nextIndex;
+  captions.forEach((c) => { inputs.push("-i", c.file); nextIndex++; });
+
+  const audioIndex = nextIndex;
   const bgmFile = bgm ? path.resolve(bgm) : "";
-  if (bgmFile && fs.existsSync(bgmFile)) inputs.push("-stream_loop", "-1", "-i", bgmFile);
+  const hasBgm = Boolean(bgmFile && fs.existsSync(bgmFile));
+  if (hasBgm) inputs.push("-stream_loop", "-1", "-i", bgmFile);
   else inputs.push("-f", "lavfi", "-t", String(q(total)), "-i", "anullsrc=channel_layout=stereo:sample_rate=44100");
 
   const chain = [];
@@ -71,14 +94,30 @@ export async function renderShorts({ video, timeline, brand, render, paths, hook
   let last = "b0";
   captions.forEach((c, i) => {
     const next = `b${i + 1}`;
-    chain.push(`[${last}][${3 + i}:v]overlay=0:0:enable='between(t,${c.start},${c.end})'[${next}]`);
+    chain.push(`[${last}][${captionBase + i}:v]overlay=0:0:enable='between(t,${c.start},${c.end})'[${next}]`);
     last = next;
   });
-  chain.push(`[1:v]scale=${W}:${H},fps=${FPS},format=rgba,fade=t=out:st=${q(introSeconds - 0.3)}:d=0.3[intro]`);
-  chain.push(`[2:v]scale=${W}:${H},fps=${FPS},format=rgba,fade=t=in:st=0:d=0.3[outro]`);
-  chain.push(`[intro][${last}][outro]concat=n=3:v=1:a=0,format=yuv420p[v]`);
+
+  const segments = [];
+  if (hasIntro) {
+    chain.push(`[${introIndex}:v]scale=${W}:${H},fps=${FPS},format=rgba,fade=t=out:st=${q(Math.max(0, introSeconds - 0.3))}:d=0.3[intro]`);
+    segments.push("[intro]");
+  }
+  segments.push(`[${last}]`);
+  if (hasOutro) {
+    chain.push(`[${outroIndex}:v]scale=${W}:${H},fps=${FPS},format=rgba,fade=t=in:st=0:d=0.3[outro]`);
+    segments.push("[outro]");
+  }
+
+  if (segments.length > 1) {
+    chain.push(`${segments.join("")}concat=n=${segments.length}:v=1:a=0,format=yuv420p[v]`);
+  } else {
+    // 카드가 하나도 없으면 본편만 그대로 씁니다 (concat=n=1 은 쓰지 않습니다).
+    chain.push(`[${last}]format=yuv420p[v]`);
+  }
+
   chain.push(
-    bgmFile && fs.existsSync(bgmFile)
+    hasBgm
       ? `[${audioIndex}:a]atrim=0:${q(total)},asetpts=N/SR/TB,volume=0.22,afade=t=out:st=${q(Math.max(0, total - 1.2))}:d=1.2[a]`
       : `[${audioIndex}:a]anull[a]`
   );
@@ -94,6 +133,11 @@ export async function renderShorts({ video, timeline, brand, render, paths, hook
     "-t", String(q(total)),
     outMp4,
   ]);
+
+  // 표지 이미지: 인트로 카드가 있으면 그걸 쓰고, 없으면 본편 첫 장면에서 뽑습니다.
+  if (hasIntro) fs.copyFileSync(introPng, outCover);
+  else await ff.run(["-ss", "0.5", "-i", outMp4, "-frames:v", "1", outCover]);
+
   log.ok(`숏츠 mp4 → ${path.relative(process.cwd(), outMp4)}`);
 
   // ── 3) GIF (인트로 다음 구간만) ───────────────────────────

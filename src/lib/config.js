@@ -42,7 +42,7 @@ const DEFAULTS = {
   brand: { name: "브랜드", voice: "친근하고 구체적으로", banned: [], cta: "", colors: {} },
   capture: { flow: "config/flows/example-homepage.yaml" },
   render: {
-    shorts: { width: 1080, height: 1920, fps: 30, maxDuration: 28, speed: "auto", introSeconds: 1.6, outroSeconds: 2.0, bgm: "" },
+    shorts: { width: 1080, height: 1920, fps: 30, maxDuration: 28, speed: "auto", introSeconds: 1.6, outroSeconds: 0, bgm: "" },
     gif: { width: 640, fps: 12, maxDuration: 8 },
   },
   blog: { feed: "", urls: [], limit: 3, stateFile: ".state/seen.json" },

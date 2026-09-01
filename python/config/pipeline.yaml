@@ -37,7 +37,8 @@ render:
     maxDuration: 28
     speed: auto        # auto | 1 | 1.5 | 2 ...
     introSeconds: 1.6
-    outroSeconds: 2.0
+    # 0 으로 두면 마지막 카드 없이 본편에서 바로 끝납니다. 인트로도 0 이면 카드 없이 본편만.
+    outroSeconds: 0
     bgm: ""            # assets/bgm.mp3 처럼 경로를 넣으면 배경음이 깔립니다
   gif:
     width: 640
