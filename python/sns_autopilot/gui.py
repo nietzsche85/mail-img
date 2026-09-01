@@ -10,7 +10,7 @@ import subprocess
 import sys
 import threading
 from pathlib import Path
-from tkinter import BOTH, END, LEFT, RIGHT, W, X, BooleanVar, StringVar, Text, Tk, messagebox
+from tkinter import BOTH, END, LEFT, RIGHT, W, X, BooleanVar, StringVar, Text, Tk, filedialog, messagebox
 from tkinter import font as tkfont
 from tkinter import ttk
 
@@ -55,37 +55,62 @@ class App:
         url_entry.grid(row=0, column=1, columnspan=3, sticky="ew", padx=(8, 0), pady=4)
         url_entry.focus()
 
-        ttk.Label(form, text="첫 화면 문구").grid(row=1, column=0, sticky=W, pady=4)
+        ttk.Label(form, text="영상 자막").grid(row=1, column=0, sticky=W, pady=4)
         self.caption = StringVar()
         ttk.Entry(form, textvariable=self.caption).grid(
             row=1, column=1, columnspan=3, sticky="ew", padx=(8, 0), pady=4
         )
-        ttk.Label(form, text="비워두면 문구 없이 화면만 담습니다. **강조** 를 쓰면 포인트 색으로 나옵니다.",
+        ttk.Label(form, text="녹화 화면 위에 깔리는 문구입니다. **강조** 를 쓰면 포인트 색으로 나옵니다. 비워도 됩니다.",
                   foreground="#666").grid(row=2, column=1, columnspan=3, sticky=W, padx=(8, 0))
 
-        ttk.Label(form, text="마지막 화면 문구").grid(row=3, column=0, sticky=W, pady=4)
-        self.outro = StringVar()
-        ttk.Entry(form, textvariable=self.outro).grid(
-            row=3, column=1, columnspan=3, sticky="ew", padx=(8, 0), pady=4
-        )
-        ttk.Label(form, text="비워두면 설정의 brand.cta 를 쓰고, 그것도 비어 있으면 마지막 화면에 문구가 안 나옵니다.",
-                  foreground="#666").grid(row=4, column=1, columnspan=3, sticky=W, padx=(8, 0))
-
-        ttk.Label(form, text="화면 크기").grid(row=5, column=0, sticky=W, pady=(10, 4))
+        ttk.Label(form, text="화면 크기").grid(row=3, column=0, sticky=W, pady=(10, 4))
         self.viewport = StringVar(value=list(VIEWPORTS)[0])
         ttk.Combobox(form, textvariable=self.viewport, values=list(VIEWPORTS),
-                     state="readonly", width=18).grid(row=5, column=1, sticky=W, padx=(8, 0), pady=(10, 4))
+                     state="readonly", width=18).grid(row=3, column=1, sticky=W, padx=(8, 0), pady=(10, 4))
 
-        ttk.Label(form, text="스크롤 시간").grid(row=5, column=2, sticky=W, padx=(16, 0), pady=(10, 4))
+        ttk.Label(form, text="스크롤 시간").grid(row=3, column=2, sticky=W, padx=(16, 0), pady=(10, 4))
         self.scroll = StringVar(value="6")
         ttk.Spinbox(form, from_=1, to=30, width=5, textvariable=self.scroll).grid(
-            row=5, column=3, sticky=W, padx=(8, 0), pady=(10, 4)
+            row=3, column=3, sticky=W, padx=(8, 0), pady=(10, 4)
         )
 
         self.headed = BooleanVar(value=False)
         ttk.Checkbutton(form, text="브라우저 창을 띄워서 진행 보기", variable=self.headed).grid(
-            row=6, column=1, columnspan=3, sticky=W, padx=(8, 0), pady=(6, 0)
+            row=4, column=1, columnspan=3, sticky=W, padx=(8, 0), pady=(6, 0)
         )
+
+        # ── 앞뒤 카드 ───────────────────────────────────────
+        cards = ttk.LabelFrame(outer, text="앞뒤 카드 (비워두면 카드 없이 녹화 화면만 나갑니다)", padding=PAD)
+        cards.pack(fill=X, pady=(PAD, 0))
+        cards.columnconfigure(1, weight=1)
+        ttk.Label(cards, text="문구를 적거나 직접 만든 이미지를 고르세요. 이미지를 고르면 문구 대신 그 이미지가 쓰입니다.",
+                  foreground="#666").grid(row=0, column=0, columnspan=6, sticky=W, pady=(0, 8))
+
+        self.card_vars = {}
+        for row, (key, label, default_seconds) in enumerate(
+            (("intro", "앞 카드", "1.6"), ("outro", "뒤 카드", "2.0")), start=1
+        ):
+            ttk.Label(cards, text=label).grid(row=row, column=0, sticky=W, pady=4)
+            text_var = StringVar()
+            ttk.Entry(cards, textvariable=text_var).grid(row=row, column=1, sticky="ew", padx=(8, 8), pady=4)
+
+            image_var = StringVar()
+            name_var = StringVar(value="이미지 없음")
+            ttk.Button(cards, text="이미지…", width=9,
+                       command=lambda k=key: self.pick_image(k)).grid(row=row, column=2, pady=4)
+            ttk.Label(cards, textvariable=name_var, foreground="#444", width=18).grid(
+                row=row, column=3, sticky=W, padx=(8, 0), pady=4
+            )
+            ttk.Button(cards, text="지우기", width=7,
+                       command=lambda k=key: self.clear_image(k)).grid(row=row, column=4, pady=4)
+
+            seconds_var = StringVar(value=default_seconds)
+            ttk.Spinbox(cards, from_=0.5, to=10, increment=0.1, width=5,
+                        textvariable=seconds_var).grid(row=row, column=5, sticky=W, padx=(12, 2), pady=4)
+            ttk.Label(cards, text="초").grid(row=row, column=6, sticky=W, pady=4)
+
+            self.card_vars[key] = {"text": text_var, "image": image_var,
+                                   "name": name_var, "seconds": seconds_var}
 
         # ── 버튼 ────────────────────────────────────────────
         buttons = ttk.Frame(outer, padding=(0, PAD))
@@ -139,6 +164,30 @@ class App:
             self.log_view.tag_configure(kind, foreground=color)
 
         self.root.after(120, self.drain)
+
+    # ── 앞뒤 카드 이미지 ────────────────────────────────────
+    def pick_image(self, key: str) -> None:
+        path = filedialog.askopenfilename(
+            title=f"{'앞' if key == 'intro' else '뒤'} 카드에 쓸 이미지",
+            filetypes=[("이미지", "*.png *.jpg *.jpeg *.webp *.bmp"), ("모든 파일", "*.*")],
+        )
+        if not path:
+            return
+        self.card_vars[key]["image"].set(path)
+        self.card_vars[key]["name"].set(Path(path).name)
+
+    def clear_image(self, key: str) -> None:
+        self.card_vars[key]["image"].set("")
+        self.card_vars[key]["name"].set("이미지 없음")
+
+    def card_params(self) -> dict:
+        """앞뒤 카드 입력을 파이프라인이 쓰는 키로 바꿉니다."""
+        params = {}
+        for key, group in self.card_vars.items():
+            params[f"{key}_text"] = group["text"].get().strip()
+            params[f"{key}_image"] = group["image"].get().strip()
+            params[f"{key}_seconds"] = float(group["seconds"].get() or 0)
+        return params
 
     # ── 로그 ────────────────────────────────────────────────
     def from_thread(self, kind: str, message: str) -> None:
@@ -202,10 +251,10 @@ class App:
         params = {
             "url": url,
             "caption": self.caption.get().strip(),
-            "outro": self.outro.get().strip(),
             "viewport": VIEWPORTS[self.viewport.get()],
             "scroll_seconds": float(self.scroll.get() or 6),
             "headed": self.headed.get(),
+            **self.card_params(),
         }
         threading.Thread(target=self.worker, args=(job, params), daemon=True).start()
 
@@ -252,8 +301,8 @@ class App:
         params = {
             "url": url,
             "caption": self.caption.get().strip(),
-            "outro": self.outro.get().strip(),
             "viewport": VIEWPORTS[self.viewport.get()],
+            **self.card_params(),
         }
         threading.Thread(target=self.manual_worker, args=(params,), daemon=True).start()
 

@@ -57,19 +57,29 @@ export async function stepCopy({ config, paths }, opts = {}) {
   return copy;
 }
 
-export async function stepRender({ config, paths }) {
+/** 설정의 앞/뒤 카드 값에 옵션으로 들어온 값을 덮어씁니다. */
+function cardOptions(opts, configBlock, prefix) {
+  const block = { ...(configBlock ?? {}) };
+  for (const key of ["text", "image", "seconds"]) {
+    const value = opts?.[`${prefix}_${key}`];
+    if (value !== undefined && value !== "") block[key] = value;
+  }
+  return block;
+}
+
+export async function stepRender({ config, paths }, opts = {}) {
   const m = readManifest(paths);
   if (!m.video || !fs.existsSync(m.video)) throw new Error("녹화본이 없습니다. 먼저 capture 를 실행하세요.");
-  const copy = m.copy ?? {};
+  const shorts = config.render.shorts;
   const media = await renderShorts({
     video: m.video,
     timeline: m.timeline ?? { captions: [], duration: 0 },
     brand: config.brand,
     render: config.render,
     paths,
-    hook: copy.hook ?? config.brand.name,
-    sub: copy.hookSub ?? "",
-    cta: copy.cta ?? config.brand.cta,
+    // 앞뒤 카드는 직접 넣은 문구나 이미지가 있을 때만 붙습니다.
+    intro: cardOptions(opts, shorts.intro, "intro"),
+    outro: cardOptions(opts, shorts.outro, "outro"),
   });
   saveManifest(paths, { media: { ...(m.media ?? {}), ...media } });
   return media;

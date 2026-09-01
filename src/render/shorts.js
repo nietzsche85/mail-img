@@ -7,12 +7,58 @@ import { captionHtml, introHtml, outroHtml } from "./cards.js";
 
 const q = (n) => Number(n.toFixed(3));
 
+/** 앞뒤 카드에 쓸 수 있는 이미지 형식 */
+const IMAGE_SUFFIXES = new Set([".png", ".jpg", ".jpeg", ".webp", ".bmp"]);
+
+/** 설정에서 온 앞/뒤 카드 값을 다루기 쉬운 모양으로 정리합니다. */
+function cardSpec(spec) {
+  return {
+    text: (spec?.text ?? "").trim(),
+    image: (spec?.image ?? "").trim(),
+    seconds: Number(spec?.seconds ?? 0),
+  };
+}
+
+/**
+ * 카드 하나를 준비합니다.
+ * - 이미지가 지정돼 있으면 그 파일을 그대로 씁니다 (직접 만든 카드).
+ * - 아니면 문구로 카드를 그립니다.
+ * - 문구도 이미지도 없으면 그 카드는 붙이지 않습니다.
+ */
+function prepareCard(spec, kind, brand, W, H, outPng, jobs) {
+  if (spec.seconds <= 0 || (!spec.text && !spec.image)) {
+    fs.rmSync(outPng, { force: true });   // 껐는데 예전 실행의 카드가 남으면 헷갈립니다
+    return null;
+  }
+
+  if (spec.image) {
+    const source = path.resolve(spec.image);
+    if (!fs.existsSync(source)) {
+      log.warn(`${kind} 카드 이미지를 찾을 수 없습니다: ${source}`);
+      if (!spec.text) return null;
+      log.info("  문구로 카드를 만듭니다.");
+    } else if (!IMAGE_SUFFIXES.has(path.extname(source).toLowerCase())) {
+      log.warn(`${kind} 카드 이미지 형식을 알 수 없습니다: ${path.extname(source)}`);
+      return null;
+    } else {
+      fs.rmSync(outPng, { force: true });
+      return { path: source, seconds: spec.seconds, fromImage: true };
+    }
+  }
+
+  const html = kind === "앞"
+    ? introHtml({ hook: spec.text, sub: "", brand, width: W, height: H })
+    : outroHtml({ cta: spec.text, brand, width: W, height: H });
+  jobs.push({ html, width: W, height: H, out: outPng });
+  return { path: outPng, seconds: spec.seconds, fromImage: false };
+}
+
 /**
  * 녹화본(webm) + 자막 타임라인 → 세로 숏츠 mp4 와 GIF.
  * 글자는 전부 크롬에서 PNG 로 구워 얹기 때문에 한글이 깨지지 않습니다.
  */
-export async function renderShorts({ video, timeline, brand, render, paths, hook, sub, cta }) {
-  const { width: W, height: H, fps: FPS, maxDuration, introSeconds, outroSeconds, bgm } = render.shorts;
+export async function renderShorts({ video, timeline, brand, render, paths, intro, outro }) {
+  const { width: W, height: H, fps: FPS, maxDuration, bgm } = render.shorts;
   const outMp4 = path.join(paths.render, "shorts.mp4");
   const outGif = path.join(paths.render, "preview.gif");
   const outCover = path.join(paths.render, "cover.png");
@@ -26,10 +72,8 @@ export async function renderShorts({ video, timeline, brand, render, paths, hook
   }
   const rawLimit = Math.min(rawDuration, maxDuration * factor);
   const bodyDuration = rawLimit / factor;
-  const total = introSeconds + bodyDuration + outroSeconds;
-  log.info(`원본 ${rawDuration.toFixed(1)}초 → 배속 ${factor.toFixed(2)}x → 본편 ${bodyDuration.toFixed(1)}초 (총 ${total.toFixed(1)}초)`);
 
-  // ── 1) 오버레이용 PNG 굽기 ────────────────────────────────
+  // ── 1) 자막과 앞뒤 카드 준비 ──────────────────────────────
   const captions = (timeline.captions ?? [])
     .filter((c) => c.text && (c.end ?? rawDuration) > c.start)
     .map((c, i) => ({
@@ -41,39 +85,37 @@ export async function renderShorts({ video, timeline, brand, render, paths, hook
     }))
     .filter((c) => c.end - c.start > 0.25);
 
-  // 인트로·아웃트로는 초를 0 으로 두면 카드 자체가 빠집니다.
-  const hasIntro = introSeconds > 0;
-  const hasOutro = outroSeconds > 0;
-  const introPng = path.join(paths.render, "intro.png");
-  const outroPng = path.join(paths.render, "outro.png");
-
   const jobs = [];
-  if (hasIntro) jobs.push({ html: introHtml({ hook, sub, brand, width: W, height: H }), width: W, height: H, out: introPng });
-  // 비워두면 그 줄이 안 나오도록, 여기서 기본 문구를 끼워넣지 않습니다.
-  if (hasOutro) jobs.push({ html: outroHtml({ cta: cta || brand.cta || "", brand, width: W, height: H }), width: W, height: H, out: outroPng });
+  const introCard = prepareCard(cardSpec(intro), "앞", brand, W, H, path.join(paths.render, "intro.png"), jobs);
+  const outroCard = prepareCard(cardSpec(outro), "뒤", brand, W, H, path.join(paths.render, "outro.png"), jobs);
   jobs.push(...captions.map((c) => ({
     html: captionHtml(c.text, { width: W, height: H, brand }),
     width: W, height: H, out: c.file, transparent: true,
   })));
   await renderAll(jobs);
 
-  // 껐는데 예전 실행의 카드가 남아 있으면 헷갈립니다.
-  if (!hasIntro) fs.rmSync(introPng, { force: true });
-  if (!hasOutro) fs.rmSync(outroPng, { force: true });
+  const introSeconds = introCard ? introCard.seconds : 0;
+  const outroSeconds = outroCard ? outroCard.seconds : 0;
+  const total = introSeconds + bodyDuration + outroSeconds;
+  const parts = [
+    introCard ? `앞 ${introSeconds.toFixed(1)}초` : "",
+    `본편 ${bodyDuration.toFixed(1)}초`,
+    outroCard ? `뒤 ${outroSeconds.toFixed(1)}초` : "",
+  ].filter(Boolean).join(" + ");
+  log.info(`원본 ${rawDuration.toFixed(1)}초 → 배속 ${factor.toFixed(2)}x → ${parts} (총 ${total.toFixed(1)}초)`);
 
   // ── 2) ffmpeg 그래프 조립 ─────────────────────────────────
   // 카드를 빼면 입력 번호가 밀리므로 번호를 만들면서 기억해 둡니다.
   const inputs = ["-i", video];
   let nextIndex = 1;
-
   let introIndex = null;
-  if (hasIntro) {
-    inputs.push("-loop", "1", "-t", String(q(introSeconds)), "-i", introPng);
+  let outroIndex = null;
+  if (introCard) {
+    inputs.push("-loop", "1", "-t", String(q(introSeconds)), "-i", introCard.path);
     introIndex = nextIndex++;
   }
-  let outroIndex = null;
-  if (hasOutro) {
-    inputs.push("-loop", "1", "-t", String(q(outroSeconds)), "-i", outroPng);
+  if (outroCard) {
+    inputs.push("-loop", "1", "-t", String(q(outroSeconds)), "-i", outroCard.path);
     outroIndex = nextIndex++;
   }
 
@@ -98,14 +140,17 @@ export async function renderShorts({ video, timeline, brand, render, paths, hook
     last = next;
   });
 
+  // 직접 넣은 이미지는 비율이 제각각이라, 늘리지 말고 채운 뒤 잘라냅니다.
+  const fit = `scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H}`;
+
   const segments = [];
-  if (hasIntro) {
-    chain.push(`[${introIndex}:v]scale=${W}:${H},fps=${FPS},format=rgba,fade=t=out:st=${q(Math.max(0, introSeconds - 0.3))}:d=0.3[intro]`);
+  if (introCard) {
+    chain.push(`[${introIndex}:v]${fit},fps=${FPS},format=rgba,fade=t=out:st=${q(Math.max(0, introSeconds - 0.3))}:d=0.3[intro]`);
     segments.push("[intro]");
   }
   segments.push(`[${last}]`);
-  if (hasOutro) {
-    chain.push(`[${outroIndex}:v]scale=${W}:${H},fps=${FPS},format=rgba,fade=t=in:st=0:d=0.3[outro]`);
+  if (outroCard) {
+    chain.push(`[${outroIndex}:v]${fit},fps=${FPS},format=rgba,fade=t=in:st=0:d=0.3[outro]`);
     segments.push("[outro]");
   }
 
@@ -133,11 +178,6 @@ export async function renderShorts({ video, timeline, brand, render, paths, hook
     "-t", String(q(total)),
     outMp4,
   ]);
-
-  // 표지 이미지: 인트로 카드가 있으면 그걸 쓰고, 없으면 본편 첫 장면에서 뽑습니다.
-  if (hasIntro) fs.copyFileSync(introPng, outCover);
-  else await ff.run(["-ss", "0.5", "-i", outMp4, "-frames:v", "1", outCover]);
-
   log.ok(`숏츠 mp4 → ${path.relative(process.cwd(), outMp4)}`);
 
   // ── 3) GIF (인트로 다음 구간만) ───────────────────────────

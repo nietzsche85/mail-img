@@ -106,6 +106,16 @@ def step_copy(ctx: Context, options: dict) -> dict:
     return copy
 
 
+def _card_options(options: dict, config_block: dict | None, prefix: str) -> dict:
+    """설정의 앞/뒤 카드 값에 창(GUI)에서 넣은 값을 덮어씁니다."""
+    block = dict(config_block or {})
+    for key in ("text", "image", "seconds"):
+        value = options.get(f"{prefix}_{key}")
+        if value not in (None, ""):
+            block[key] = value
+    return block
+
+
 def step_render(ctx: Context, options: dict | None = None) -> dict:
     options = options or {}
     manifest = ctx.manifest()
@@ -113,18 +123,16 @@ def step_render(ctx: Context, options: dict | None = None) -> dict:
     if not video or not Path(video).exists():
         raise RuntimeError("녹화본이 없습니다. 먼저 capture 를 실행하세요.")
 
-    copy = manifest.get("copy") or {}
+    shorts = ctx.config["render"]["shorts"]
     media = render_shorts(
         video=video,
         timeline=manifest.get("timeline") or {"captions": [], "duration": 0},
         brand=ctx.config["brand"],
         render_config=ctx.config["render"],
         paths=ctx.paths,
-        # GUI 에서 문구를 직접 넣었으면 그것을 첫 화면 훅으로 씁니다.
-        hook=options.get("caption") or copy.get("hook") or ctx.config["brand"]["name"],
-        sub=copy.get("hookSub", ""),
-        # GUI 에서 마지막 화면 문구를 직접 넣었으면 그것을 씁니다.
-        cta=options.get("outro") or copy.get("cta") or ctx.config["brand"].get("cta", ""),
+        # 앞뒤 카드는 직접 넣은 문구나 이미지가 있을 때만 붙습니다.
+        intro=_card_options(options, shorts.get("intro"), "intro"),
+        outro=_card_options(options, shorts.get("outro"), "outro"),
     )
     ctx.save(media={**(manifest.get("media") or {}), **media})
     return media

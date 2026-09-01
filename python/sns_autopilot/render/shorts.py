@@ -1,7 +1,6 @@
 """녹화본 + 자막 타임라인 → 세로 숏츠 mp4 와 GIF."""
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
 from typing import Any
 
@@ -10,6 +9,53 @@ from ..paths import RunPaths, relative
 from .cards import caption_html, intro_html, outro_html
 from .html2png import RenderJob, render_all
 
+#: 앞뒤 카드에 쓸 수 있는 이미지 형식
+IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
+
+
+def _card_spec(spec: dict | None) -> dict:
+    """설정에서 온 앞/뒤 카드 값을 다루기 쉬운 모양으로 정리합니다."""
+    spec = spec or {}
+    return {
+        "text": (spec.get("text") or "").strip(),
+        "image": (spec.get("image") or "").strip(),
+        "seconds": float(spec.get("seconds") or 0),
+    }
+
+
+def _prepare_card(spec: dict, kind: str, brand: dict, width: int, height: int,
+                  out_png: Path, jobs: list) -> dict | None:
+    """카드 하나를 준비합니다.
+
+    - 이미지가 지정돼 있으면 그 파일을 그대로 씁니다 (직접 만든 카드).
+    - 아니면 문구로 카드를 그립니다.
+    - 문구도 이미지도 없으면 그 카드는 붙이지 않습니다.
+    """
+    if spec["seconds"] <= 0 or not (spec["text"] or spec["image"]):
+        out_png.unlink(missing_ok=True)      # 껐는데 예전 실행의 카드가 남으면 헷갈립니다
+        return None
+
+    if spec["image"]:
+        source = Path(spec["image"]).expanduser()
+        if not source.exists():
+            log.warn(f"{kind} 카드 이미지를 찾을 수 없습니다: {source}")
+            if not spec["text"]:
+                return None
+            log.info("  문구로 카드를 만듭니다.")
+        elif source.suffix.lower() not in IMAGE_SUFFIXES:
+            log.warn(f"{kind} 카드 이미지 형식을 알 수 없습니다: {source.suffix}")
+            return None
+        else:
+            out_png.unlink(missing_ok=True)
+            return {"path": source, "seconds": spec["seconds"], "from_image": True}
+
+    html = (
+        intro_html(spec["text"], "", brand, width, height) if kind == "앞"
+        else outro_html(spec["text"], brand, width, height)
+    )
+    jobs.append(RenderJob(html, width, height, out_png))
+    return {"path": out_png, "seconds": spec["seconds"], "from_image": False}
+
 
 def render_shorts(
     video: str | Path,
@@ -17,14 +63,12 @@ def render_shorts(
     brand: dict,
     render_config: dict,
     paths: RunPaths,
-    hook: str,
-    sub: str = "",
-    cta: str = "",
+    intro: dict | None = None,
+    outro: dict | None = None,
 ) -> dict[str, Any]:
     shorts = render_config["shorts"]
     width, height, fps = shorts["width"], shorts["height"], shorts["fps"]
     max_duration = shorts["maxDuration"]
-    intro_seconds, outro_seconds = shorts["introSeconds"], shorts["outroSeconds"]
 
     out_mp4 = paths.render / "shorts.mp4"
     out_gif = paths.render / "preview.gif"
@@ -37,12 +81,8 @@ def render_shorts(
         factor = float(shorts["speed"] or 1)
     raw_limit = min(raw_duration, max_duration * factor)
     body_duration = raw_limit / factor
-    total = intro_seconds + body_duration + outro_seconds
-    log.info(
-        f"원본 {raw_duration:.1f}초 → 배속 {factor:.2f}x → 본편 {body_duration:.1f}초 (총 {total:.1f}초)"
-    )
 
-    # ── 1) 오버레이용 PNG 굽기 ────────────────────────────────
+    # ── 1) 자막과 앞뒤 카드 준비 ──────────────────────────────
     captions = []
     for index, item in enumerate(timeline.get("captions") or []):
         if not item.get("text"):
@@ -57,44 +97,44 @@ def render_shorts(
             "file": paths.render / f"caption-{index + 1:02d}.png",
         })
 
-    # 인트로·아웃트로는 초를 0 으로 두면 카드 자체가 빠집니다.
-    has_intro = intro_seconds > 0
-    has_outro = outro_seconds > 0
-    intro_png = paths.render / "intro.png"
-    outro_png = paths.render / "outro.png"
-
-    jobs = []
-    if has_intro:
-        jobs.append(RenderJob(intro_html(hook, sub, brand, width, height), width, height, intro_png))
-    if has_outro:
-        # 비워두면 그 줄이 안 나오도록, 여기서 기본 문구를 끼워넣지 않습니다.
-        jobs.append(RenderJob(outro_html(cta or brand.get("cta") or "", brand, width, height),
-                              width, height, outro_png))
+    jobs: list[RenderJob] = []
+    intro_card = _prepare_card(_card_spec(intro), "앞", brand, width, height,
+                               paths.render / "intro.png", jobs)
+    outro_card = _prepare_card(_card_spec(outro), "뒤", brand, width, height,
+                               paths.render / "outro.png", jobs)
     jobs += [
         RenderJob(caption_html(c["text"], width, height, brand), width, height, c["file"], transparent=True)
         for c in captions
     ]
     render_all(jobs)
 
-    # 껐는데 예전 실행의 카드가 남아 있으면 헷갈립니다.
-    for used, card in ((has_intro, intro_png), (has_outro, outro_png)):
-        if not used:
-            card.unlink(missing_ok=True)
+    intro_seconds = intro_card["seconds"] if intro_card else 0.0
+    outro_seconds = outro_card["seconds"] if outro_card else 0.0
+    total = intro_seconds + body_duration + outro_seconds
+    cards = " + ".join(
+        part for part in (
+            f"앞 {intro_seconds:.1f}초" if intro_card else "",
+            f"본편 {body_duration:.1f}초",
+            f"뒤 {outro_seconds:.1f}초" if outro_card else "",
+        ) if part
+    )
+    log.info(f"원본 {raw_duration:.1f}초 → 배속 {factor:.2f}x → {cards} (총 {total:.1f}초)")
 
     # ── 2) ffmpeg 그래프 조립 ─────────────────────────────────
     # 카드를 빼면 입력 번호가 밀리므로 번호를 만들면서 기억해 둡니다.
     inputs = ["-i", str(video)]
     next_index = 1
 
-    intro_index = None
-    if has_intro:
-        inputs += ["-loop", "1", "-t", f"{intro_seconds:.3f}", "-i", str(intro_png)]
-        intro_index, next_index = next_index, next_index + 1
-
-    outro_index = None
-    if has_outro:
-        inputs += ["-loop", "1", "-t", f"{outro_seconds:.3f}", "-i", str(outro_png)]
-        outro_index, next_index = next_index, next_index + 1
+    intro_index = outro_index = None
+    for card, setter in ((intro_card, "intro"), (outro_card, "outro")):
+        if not card:
+            continue
+        inputs += ["-loop", "1", "-t", f"{card['seconds']:.3f}", "-i", str(card["path"])]
+        if setter == "intro":
+            intro_index = next_index
+        else:
+            outro_index = next_index
+        next_index += 1
 
     caption_base = next_index
     for caption in captions:
@@ -102,7 +142,7 @@ def render_shorts(
         next_index += 1
 
     audio_index = next_index
-    bgm = Path(shorts["bgm"]).resolve() if shorts.get("bgm") else None
+    bgm = Path(shorts["bgm"]).expanduser() if shorts.get("bgm") else None
     has_bgm = bool(bgm and bgm.exists())
     if has_bgm:
         inputs += ["-stream_loop", "-1", "-i", str(bgm)]
@@ -123,15 +163,17 @@ def render_shorts(
         )
         last = nxt
 
+    # 직접 넣은 이미지는 비율이 제각각이라, 늘리지 말고 채운 뒤 잘라냅니다.
+    fit = f"scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height}"
+
     segments = []
-    if has_intro:
-        chain.append(f"[{intro_index}:v]scale={width}:{height},fps={fps},format=rgba,"
+    if intro_card:
+        chain.append(f"[{intro_index}:v]{fit},fps={fps},format=rgba,"
                      f"fade=t=out:st={max(0.0, intro_seconds - 0.3):.3f}:d=0.3[intro]")
         segments.append("[intro]")
     segments.append(f"[{last}]")
-    if has_outro:
-        chain.append(f"[{outro_index}:v]scale={width}:{height},fps={fps},format=rgba,"
-                     f"fade=t=in:st=0:d=0.3[outro]")
+    if outro_card:
+        chain.append(f"[{outro_index}:v]{fit},fps={fps},format=rgba,fade=t=in:st=0:d=0.3[outro]")
         segments.append("[outro]")
 
     if len(segments) > 1:
@@ -157,16 +199,12 @@ def render_shorts(
         "-t", f"{total:.3f}",
         str(out_mp4),
     ])
-
-    # 표지 이미지: 인트로 카드가 있으면 그걸 쓰고, 없으면 본편 첫 장면에서 뽑습니다.
-    if has_intro:
-        shutil.copyfile(intro_png, out_cover)
-    else:
-        ffmpeg.run(["-ss", "0.5", "-i", str(out_mp4), "-frames:v", "1", str(out_cover)])
-
     log.ok(f"숏츠 mp4 → {relative(out_mp4)}")
 
-    # ── 3) GIF (인트로 다음 구간만) ───────────────────────────
+    # 표지 이미지는 완성된 영상에서 뽑습니다 (카드가 있든 없든 항상 맞습니다).
+    ffmpeg.run(["-ss", "0.5", "-i", str(out_mp4), "-frames:v", "1", str(out_cover)])
+
+    # ── 3) GIF (앞 카드 다음 구간만) ──────────────────────────
     gif = render_config["gif"]
     ffmpeg.run([
         "-ss", f"{intro_seconds:.3f}", "-t", f"{min(gif['maxDuration'], body_duration):.3f}",

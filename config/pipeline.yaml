@@ -36,9 +36,12 @@ render:
     # 녹화가 이보다 길면 배속으로 줄입니다 (숏츠는 짧을수록 완주율이 높음)
     maxDuration: 28
     speed: auto        # auto | 1 | 1.5 | 2 ...
-    introSeconds: 1.6
-    # 0 으로 두면 마지막 카드 없이 본편에서 바로 끝납니다. 인트로도 0 이면 카드 없이 본편만.
-    outroSeconds: 0
+    # 영상 앞뒤에 붙일 카드. 기본은 둘 다 없음 — 녹화한 화면만 그대로 나갑니다.
+    #   text  문구를 적으면 그 문구로 카드를 만듭니다 (**강조** 는 포인트 색)
+    #   image 직접 만든 이미지 경로. 있으면 문구 대신 이 이미지를 씁니다
+    #   둘 다 비어 있으면 그 카드는 아예 안 붙습니다
+    intro: { text: "", image: "", seconds: 1.6 }
+    outro: { text: "", image: "", seconds: 2.0 }
     bgm: ""            # assets/bgm.mp3 처럼 경로를 넣으면 배경음이 깔립니다
   gif:
     width: 640

@@ -19,7 +19,9 @@ DEFAULTS: dict[str, Any] = {
     "render": {
         "shorts": {
             "width": 1080, "height": 1920, "fps": 30, "maxDuration": 28,
-            "speed": "auto", "introSeconds": 1.6, "outroSeconds": 0, "bgm": "",
+            "speed": "auto", "bgm": "",
+            "intro": {"text": "", "image": "", "seconds": 1.6},
+            "outro": {"text": "", "image": "", "seconds": 2.0},
         },
         "gif": {"width": 640, "fps": 12, "maxDuration": 8},
     },
