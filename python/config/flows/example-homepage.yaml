@@ -37,6 +37,14 @@ steps:
   - click: { text: "검색" }
     caption: "검색 한 번이면"
 
+  # 셀렉터로 못 잡는 자리는 좌표로 직접 누를 수 있습니다 (창에서 '좌표 찍기' 로 얻은 값).
+  #   x, y     브라우저 화면 기준 CSS 픽셀. 위 viewport 크기 안이어야 합니다.
+  #            (완성된 영상은 deviceScaleFactor 배 크기라, 영상에서 잰 값은 그 배수로 나눠 넣으세요)
+  #   at       녹화가 시작된 뒤 몇 초에 누를지. 빼면 순서대로 바로 누릅니다.
+  #   scrollY  그 좌표를 잡았을 때의 스크롤 위치. 누르기 전에 이 위치로 맞춥니다.
+  # - clickAt: { x: 270, y: 326, at: 6.0, scrollY: 0 }
+  #   caption: "여기를 누르면"
+
   - wait: { selector: "[data-testid='result-list']", timeout: 15 }
 
   - scroll: { to: "bottom", duration: 2.5 }

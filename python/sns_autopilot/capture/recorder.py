@@ -50,21 +50,41 @@ def _resolve_locator(page: Page, spec: Any) -> Locator:
     return loc.first
 
 
+#: 마우스가 목표까지 미끄러져 가는 동안의 프레임 수와 간격.
+_GLIDE_STEPS = 22
+_GLIDE_STEP_MS = 10
+#: 미끄러지는 데 실제로 걸리는 시간은 기기마다 다릅니다(브라우저와 한 번씩 주고받는
+#: 시간이 붙어서 계산값보다 깁니다). 첫 클릭은 이 값으로 잡고, 그다음부터는 방금
+#: 걸린 시간을 그대로 씁니다.
+_GLIDE_LEAD_DEFAULT = 0.5
+#: 스크롤이 지정한 위치에 닿기를 기다리는 최대 시간
+_SCROLL_SETTLE_MS = 3000
+
+
+def _glide_to_point(page: Page, x: float, y: float, state: dict) -> None:
+    """사람이 움직인 것처럼 마우스를 (x, y) 로 옮깁니다.
+
+    좌표는 브라우저 화면 기준(CSS 픽셀)입니다 — 커서 오버레이가 쓰는
+    clientX/clientY 와 같은 기준이라, 영상 속 점과 실제 클릭 지점이 어긋나지
+    않습니다.
+    """
+    started = time.time()
+    start = state.get("mouse") or {"x": x, "y": max(0.0, y - 220)}
+    for i in range(1, _GLIDE_STEPS + 1):
+        t = i / _GLIDE_STEPS
+        ease = 2 * t * t if t < 0.5 else 1 - ((-2 * t + 2) ** 2) / 2
+        page.mouse.move(start["x"] + (x - start["x"]) * ease, start["y"] + (y - start["y"]) * ease)
+        page.wait_for_timeout(_GLIDE_STEP_MS)
+    state["mouse"] = {"x": x, "y": y}
+    state["glideSeconds"] = time.time() - started
+
+
 def _glide_to(page: Page, locator: Locator, state: dict) -> None:
-    """사람이 움직인 것처럼 마우스를 옮깁니다. 영상에서 클릭이 눈에 보이게 하려는 목적."""
+    """요소 한가운데로 마우스를 옮깁니다."""
     box = locator.bounding_box()
     if not box:
         return
-    x = box["x"] + box["width"] / 2
-    y = box["y"] + box["height"] / 2
-    start = state.get("mouse") or {"x": box["x"], "y": max(0.0, box["y"] - 220)}
-    steps = 22
-    for i in range(1, steps + 1):
-        t = i / steps
-        ease = 2 * t * t if t < 0.5 else 1 - ((-2 * t + 2) ** 2) / 2
-        page.mouse.move(start["x"] + (x - start["x"]) * ease, start["y"] + (y - start["y"]) * ease)
-        page.wait_for_timeout(10)
-    state["mouse"] = {"x": x, "y": y}
+    _glide_to_point(page, box["x"] + box["width"] / 2, box["y"] + box["height"] / 2, state)
 
 
 def _dismiss_all(page: Page, selectors: list[str] | None) -> None:
@@ -121,6 +141,117 @@ def _smooth_scroll(page: Page, spec: dict) -> None:
     })
 
 
+#: 좌표가 정말 원하던 것을 가리키는지 확인하려고, 그 자리에 있는 요소를 읽어옵니다.
+_ELEMENT_AT = r"""
+([x, y]) => {
+  const el = document.elementFromPoint(x, y);
+  if (!el) return null;
+  const rect = el.getBoundingClientRect();
+  const label = (el.innerText || el.value || el.getAttribute("aria-label") || "").trim();
+  return {
+    tag: el.tagName.toLowerCase(),
+    id: el.id || "",
+    label: label.replace(/\s+/g, " ").slice(0, 40),
+    rect: [Math.round(rect.left), Math.round(rect.top), Math.round(rect.width), Math.round(rect.height)],
+    scrollY: Math.round(window.scrollY),
+  };
+}
+"""
+
+
+def _describe_point(page: Page, x: float, y: float) -> str:
+    """(x, y) 자리에 무엇이 있는지 한 줄로. 좌표가 맞았는지 눈으로 확인하는 용도."""
+    try:
+        found = page.evaluate(_ELEMENT_AT, [x, y])
+    except Exception:  # noqa: BLE001 - 확인용이라 실패해도 진행합니다
+        return ""
+    if not found:
+        return "그 자리에 아무 요소도 없습니다"
+    name = f"<{found['tag']}"
+    if found["id"]:
+        name += f"#{found['id']}"
+    name += ">"
+    return f"{name} {found['label']}".strip() if found["label"] else name
+
+
+def _wait_for(page: Page, ctx: dict, at: float, lead: float = 0.0) -> float:
+    """녹화 시작 기준 ``at - lead`` 초까지 기다리고, 남았던 시간을 돌려줍니다.
+
+    돌려주는 값이 음수면 그만큼 이미 지났다는 뜻입니다. 기다리는 동안에도 화면
+    캐스트 프레임이 들어오도록 페이지 쪽 타이머(`wait_for_timeout`)를 씁니다.
+    """
+    elapsed = ctx.get("elapsed")
+    if not elapsed:
+        return 0.0
+    remaining = at - lead - elapsed()
+    if remaining > 0:
+        page.wait_for_timeout(remaining * 1000)
+    return remaining
+
+
+def _click_at(page: Page, spec: dict, ctx: dict) -> None:
+    """지정한 시각에 지정한 좌표를 클릭합니다."""
+    x, y = float(spec["x"]), float(spec["y"])
+
+    size = page.viewport_size or {}
+    width, height = size.get("width"), size.get("height")
+    if width and height and not (0 <= x <= width - 1 and 0 <= y <= height - 1):
+        raise ValueError(
+            f"클릭 좌표 ({x:.0f}, {y:.0f}) 가 브라우저 화면 {width}×{height} 밖입니다."
+        )
+
+    # 좌표는 화면 기준이라, 찍을 때와 같은 스크롤 위치로 맞춘 뒤에 눌러야 같은 것이 눌립니다.
+    # 정해진 시간만 기다리면 부드러운 스크롤이 채 도착하기 전에 눌러 버리므로,
+    # 실제로 그 위치에 닿을 때까지(또는 페이지 끝까지) 기다립니다.
+    scroll_y = float(spec.get("scrollY") or 0)
+    current = float(page.evaluate("() => window.scrollY") or 0)
+    if abs(scroll_y - current) > 2:
+        page.evaluate("(y) => window.scrollTo({ top: y, behavior: 'smooth' })", scroll_y)
+        try:
+            page.wait_for_function(
+                "(y) => Math.abs(window.scrollY - y) <= 2"
+                " || window.scrollY >= document.documentElement.scrollHeight - window.innerHeight - 2",
+                arg=scroll_y,
+                timeout=_SCROLL_SETTLE_MS,
+            )
+        except Exception:  # noqa: BLE001 - 아래에서 실제 위치를 보고 알려줍니다
+            pass
+        page.wait_for_timeout(120)      # 관성이 완전히 멎도록 조금 더
+        settled = float(page.evaluate("() => window.scrollY") or 0)
+        if abs(settled - scroll_y) > 2:
+            log.warn(
+                f"스크롤을 {scroll_y:.0f}px 로 맞추려 했지만 {settled:.0f}px 에서 멈췄습니다 "
+                "— 페이지가 그만큼 길지 않습니다. 좌표가 가리키는 곳이 달라질 수 있어요."
+            )
+
+    # 마우스를 먼저 보내 두고, 남은 시간을 마저 기다린 뒤에 누릅니다.
+    # 미끄러지는 데 걸리는 시간이 기기마다 달라서, 이 순서라야 클릭이 지정한
+    # 시각에 정확히 떨어집니다 (커서는 조금 먼저 도착 — 영상에서도 자연스럽습니다).
+    at = float(spec["at"]) if spec.get("at") is not None else None
+    if at is not None:
+        _wait_for(page, ctx, at, lead=ctx.get("glideSeconds") or _GLIDE_LEAD_DEFAULT)
+
+    _glide_to_point(page, x, y, ctx)
+
+    if at is not None:
+        late = -_wait_for(page, ctx, at)
+        if late > 0.25:
+            log.warn(f"클릭 시각 {at:.1f}초는 이미 {late:.1f}초 지났습니다 — 곧바로 클릭합니다.")
+            log.info("  페이지 여는 시간까지 포함한 시각이라, 느린 사이트는 시각을 더 뒤로 잡아주세요.")
+
+    target = _describe_point(page, x, y)
+    page.mouse.click(x, y)
+
+    elapsed = ctx.get("elapsed")
+    when = f"{elapsed():.1f}초" if elapsed else "지금"
+    log.info(f"클릭 {when} · ({x:.0f}, {y:.0f}) → {target or '확인 못 함'}")
+
+    try:
+        page.wait_for_load_state("domcontentloaded")
+    except Exception:  # noqa: BLE001 - 이동이 없으면 그대로 진행
+        pass
+
+
 _HIGHLIGHT = """
 (s) => {
   const el = document.querySelector(s);
@@ -133,6 +264,10 @@ def _run_step(page: Page, step: dict, ctx: dict) -> None:
     if step.get("goto"):
         page.goto(_normalize_url(step["goto"]), wait_until="domcontentloaded")
         _dismiss_all(page, ctx["dismiss"])
+        return
+
+    if step.get("clickAt"):
+        _click_at(page, step["clickAt"], ctx)
         return
 
     if step.get("click"):
@@ -260,6 +395,9 @@ def capture(flow: dict, paths: RunPaths, headless: bool = True) -> dict:
 
         def elapsed() -> float:
             return time.time() - t0
+
+        # 좌표 클릭이 "녹화 시작 후 몇 초" 를 지킬 수 있도록 시계를 넘겨줍니다.
+        ctx["elapsed"] = elapsed
 
         def push_caption(text: str) -> None:
             if captions:

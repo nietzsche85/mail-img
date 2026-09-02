@@ -7,7 +7,7 @@ from typing import Any, Callable
 
 from . import log
 from .analyze import collect_articles
-from .capture import capture, record_manually, simple_flow
+from .capture import capture, pick_points, record_manually, simple_flow
 from .config import load_config, load_yaml, resolve
 from .generate import generate_copy, generate_images
 from .paths import RunPaths, latest_run, new_run_id, read_json, write_json
@@ -50,6 +50,10 @@ def step_capture(ctx: Context, options: dict) -> dict:
             caption=options.get("caption") or "",
             scroll_seconds=float(options.get("scroll_seconds") or 6.0),
             viewport=options.get("viewport"),
+            # 직접 지정한 좌표 클릭. 비어 있으면 예전과 똑같이 스크롤만 합니다.
+            clicks=options.get("clicks"),
+            # 끄면 동의·닫기 버튼을 자동으로 찾아 누르지 않습니다.
+            auto_dismiss=options.get("auto_dismiss", True),
         )
         flow_file = "(주소로 만든 기본 시나리오)"
     else:
@@ -77,6 +81,16 @@ def step_manual_capture(ctx: Context, options: dict) -> dict:
     ctx.save(flow="(수동 녹화)", video=result["video"],
              timeline=result["timeline"], shots=result["shots"])
     return result
+
+
+def step_pick_points(options: dict) -> list[dict]:
+    """브라우저를 띄워 클릭할 자리를 직접 찍게 합니다 (녹화와 같은 창 크기)."""
+    return pick_points(
+        url=options.get("url") or "",
+        viewport=options.get("viewport"),
+        commands=options.get("commands"),
+        on_state=options.get("on_state"),
+    )
 
 
 def step_analyze(ctx: Context, options: dict) -> tuple[list[dict], Callable[[], None]]:
