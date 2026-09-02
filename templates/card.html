@@ -1,0 +1,56 @@
+<!doctype html>
+<meta charset="utf-8">
+<!--
+  홍보 이미지 카드 템플릿.
+  {{...}} 자리는 src/generate/image.js 가 채웁니다. 마음대로 디자인을 고쳐도 됩니다.
+  사용 가능한 값: badge title subtitle bullets brand cta bg accent text highlight width height image
+-->
+<style>
+{{FONT_CSS}}
+:root{
+  --bg:{{bg}}; --accent:{{accent}}; --fg:{{text}}; --hl:{{highlight}};
+  --pad:calc({{width}}px * 0.085);
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{
+  width:{{width}}px;height:{{height}}px;overflow:hidden;position:relative;
+  font-family:'AP Sans','Noto Sans KR',system-ui,sans-serif;color:var(--fg);
+  background:linear-gradient(155deg,var(--bg) 0%,#04122f 100%);
+  word-break:keep-all;line-height:1.3;
+}
+.photo{position:absolute;inset:0;background-image:url("{{image}}");background-size:cover;
+  background-position:center;opacity:.34;filter:saturate(.9)}
+.scrim{position:absolute;inset:0;background:linear-gradient(180deg,rgba(4,18,47,.55) 0%,rgba(4,18,47,.15) 45%,rgba(4,18,47,.92) 100%)}
+.wrap{position:relative;height:100%;display:flex;flex-direction:column;justify-content:flex-end;padding:var(--pad)}
+/* 배경 사진이 없으면 가운데로 모아 균형을 맞춥니다 */
+body.nophoto .wrap{justify-content:center}
+.badge{align-self:flex-start;border:2px solid var(--accent);color:var(--accent);border-radius:999px;
+  padding:calc({{width}}px*.012) calc({{width}}px*.028);font-size:calc({{width}}px*.027);font-weight:700;
+  margin-bottom:calc({{width}}px*.035)}
+.title{font-size:calc({{width}}px*.085);font-weight:900;letter-spacing:-.035em;line-height:1.16}
+.title em{font-style:normal;color:var(--hl)}
+.subtitle{margin-top:calc({{width}}px*.028);font-size:calc({{width}}px*.036);font-weight:500;opacity:.88}
+.bullets{margin-top:calc({{width}}px*.05);display:flex;flex-direction:column;gap:calc({{width}}px*.018)}
+.bullets li{list-style:none;display:flex;align-items:center;gap:calc({{width}}px*.018);
+  font-size:calc({{width}}px*.034);font-weight:600}
+.bullets li::before{content:"";width:calc({{width}}px*.016);height:calc({{width}}px*.016);
+  border-radius:50%;background:var(--accent);flex:none}
+.foot{margin-top:calc({{width}}px*.055);display:flex;align-items:center;justify-content:space-between;
+  border-top:1px solid rgba(255,255,255,.22);padding-top:calc({{width}}px*.03)}
+.brand{font-size:calc({{width}}px*.03);font-weight:700;letter-spacing:.06em;opacity:.8}
+.cta{background:var(--accent);color:#062038;border-radius:999px;font-weight:800;
+  font-size:calc({{width}}px*.03);padding:calc({{width}}px*.018) calc({{width}}px*.04)}
+</style>
+<body class="{{bodyClass}}">
+<div class="photo"></div>
+<div class="scrim"></div>
+<div class="wrap">
+  <div class="badge">{{badge}}</div>
+  <h1 class="title">{{title}}</h1>
+  <p class="subtitle">{{subtitle}}</p>
+  <ul class="bullets">{{bullets}}</ul>
+  <div class="foot">
+    <span class="brand">{{brand}}</span>
+    <span class="cta">{{cta}}</span>
+  </div>
+</div>

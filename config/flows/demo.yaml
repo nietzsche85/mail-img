@@ -1,0 +1,30 @@
+# 설치 확인용 데모 시나리오 — 인터넷 없이 로컬 페이지로 전체 흐름을 돌려봅니다.
+#   node src/cli.js capture --flow config/flows/demo.yaml
+name: "데모: 서울 → 홍콩 항공권 검색"
+url: "examples/demo-site/index.html"
+
+viewport: { width: 540, height: 960, deviceScaleFactor: 2 }
+showCursor: true
+
+steps:
+  - caption: "항공권, 아직도 **손으로** 비교하세요?"
+    pause: 1.4
+
+  - fill: { selector: "#origin", value: "서울", typeDelay: 110 }
+    caption: "출발지만 넣으면"
+
+  - fill: { selector: "#destination", value: "홍콩", typeDelay: 110 }
+    caption: "도착지도 한 번에"
+
+  - click: { selector: "#search" }
+    caption: "검색 **한 번**이면"
+
+  - wait: { selector: "#result-list.on", timeout: 10 }
+
+  - scroll: { to: "bottom", duration: 2.2 }
+    caption: "왕복 최저가부터 순서대로"
+    pause: 0.8
+
+  - highlight: "#result-list .row:last-child"
+    caption: "**28만원대** 특가까지"
+    pause: 2.0

@@ -1,0 +1,33 @@
+[project]
+name = "sns-autopilot"
+version = "0.1.0"
+description = "홈페이지 자동 조작 녹화 → 숏츠/GIF → 블로그 분석 → 바이럴 문구·이미지 생성 → SNS 자동 발행"
+requires-python = ">=3.10"
+dependencies = [
+    "anthropic>=1,<2",
+    "playwright>=1.49",
+    "pyyaml>=6.0",
+    "requests>=2.31",
+    "beautifulsoup4>=4.12",
+    "lxml>=5.0",
+    "imageio-ffmpeg>=0.5",
+    "pydantic>=2.7",
+]
+
+[project.scripts]
+sns-autopilot = "sns_autopilot.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = [
+    "sns_autopilot",
+    "sns_autopilot.capture",
+    "sns_autopilot.render",
+    "sns_autopilot.analyze",
+    "sns_autopilot.generate",
+    "sns_autopilot.publish",
+    "sns_autopilot.publish.adapters",
+]
